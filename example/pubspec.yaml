@@ -1,0 +1,21 @@
+name: adaptive_nav_example
+description: Demonstrates adaptive_nav — master-detail panes, draggable pane widths and exit guards.
+publish_to: 'none'
+version: 0.9.0
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  adaptive_nav:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

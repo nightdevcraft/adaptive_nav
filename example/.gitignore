@@ -1,0 +1,15 @@
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+
+# Platform folders are generated: `flutter create .` makes them, and the
+# example README says so. Committing only the two we happened to run on would
+# weigh the published archive down without helping anyone on Android or web.
+android/
+ios/
+linux/
+macos/
+web/
+windows/

@@ -1,0 +1,41 @@
+name: adaptive_nav
+description: >-
+  A Navigator 2.0 router that renders one navigation state as either a stack or
+  master-detail panes, and keeps screen state across window resizes.
+version: 0.9.0
+
+repository: https://github.com/nightdevcraft/adaptive_nav
+issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues
+
+screenshots:
+  # Quoted: a description may well contain a colon, and YAML would read that
+  # as a mapping key.
+  - description: 'A desktop window resized across both layout thresholds; the open detail keeps its state throughout.'
+    path: doc/screenshots/macos-example.gif
+  - description: 'A desktop window with the navigation rail and two panes side by side.'
+    path: doc/screenshots/macos-wide-two-screens.png
+  - description: 'A phone rotated from a plain stack into master-detail panes.'
+    path: doc/screenshots/ios-example.gif
+  - description: 'A phone in landscape: the rail, the list and the selected person side by side.'
+    path: doc/screenshots/ios-horizontal-two-screens.png
+  - description: 'The same app on a phone in portrait: one stack with a navigation bar.'
+    path: doc/screenshots/ios-vertical-master-screen.png
+
+topics:
+  - navigation
+  - router
+  - adaptive
+  - responsive
+  - master-detail
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

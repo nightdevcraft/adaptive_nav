@@ -1,0 +1,18 @@
+# Flutter and Dart build artifacts
+.dart_tool/
+build/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+doc/api/
+
+# A library, not an application: the lock file is not pinned.
+pubspec.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
