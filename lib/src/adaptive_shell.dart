@@ -1,10 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'entry_page.dart';
+import 'fold.dart';
 import 'nav_config.dart';
 import 'nav_state.dart';
+import 'pane_metrics.dart';
 import 'pane_split.dart';
 
 /// Stable keys for one branch's navigators, held by the delegate.
@@ -88,6 +92,10 @@ class AdaptiveShell<R> extends StatelessWidget {
   @visibleForTesting
   static const Key paneSplitHandleKey = ValueKey<String>(
     'adaptive-nav.pane-split',
+  );
+  @visibleForTesting
+  static const Key railOverflowKey = ValueKey<String>(
+    'adaptive-nav.rail-overflow',
   );
 
   bool get _activeDetailEmpty {
@@ -199,62 +207,120 @@ class AdaptiveShell<R> extends StatelessWidget {
   Widget _detailPlaceholder(BuildContext context) {
     final WidgetBuilder? b =
         shellConfig.branches[state.activeBranch].detailPlaceholder;
-    return b != null ? Builder(builder: b) : const _DefaultDetailPlaceholder();
+    // A blank pane, not a caption: the package has no screens of its own and
+    // no business shipping a string it cannot localise. Anything to say in an
+    // empty pane is [BranchConfig.detailPlaceholder]'s to say.
+    return b != null ? Builder(builder: b) : const Scaffold();
   }
-
-  /// What is left to the panes after the rail and its divider.
-  ///
-  /// Derived from the window width, never measured: the layout has to be known
-  /// at build time. The left inset is not subtracted — the rail sits against
-  /// the edge and covers a landscape notch instead of growing by it, and the
-  /// shell removes that inset for the panes' subtree.
-  static double contentWidthFor({
-    required double window,
-    required bool hasRail,
-    required double railWidth,
-    RailDecoration rail = RailDecoration.none,
-  }) {
-    if (!hasRail) {
-      return window;
-    }
-    return window - rail.regionWidth(railWidth);
-  }
-
-  /// The content area minus [PaneDecoration.margin]. This is the number that
-  /// decides "one pane or two" and that the pane widths are computed from, so
-  /// it is also the number an app's own layout formula has to arrive at.
-  static double paneAreaWidthFor({
-    required double window,
-    required bool hasRail,
-    required double railWidth,
-    required PaneDecoration panes,
-    RailDecoration rail = RailDecoration.none,
-  }) => panes.paneAreaWidth(
-    contentWidthFor(
-      window: window,
-      hasRail: hasRail,
-      railWidth: railWidth,
-      rail: rail,
-    ),
-  );
 
   @override
   Widget build(BuildContext context) {
     final Size window = MediaQuery.sizeOf(context);
     final EdgeInsets padding = MediaQuery.paddingOf(context);
-    if (!shellConfig.showsRail(window.width, padding)) {
-      return _buildCompact(context);
+    final ChromePlacement placement = shellConfig.chromeLayout(window, padding);
+    // In window coordinates, like a display feature's bounds; converted to
+    // pane coordinates once the pane area's origin is known.
+    final Rect? foldHint = shellConfig.foldLocator?.call(window, padding);
+    if (placement.isRail) {
+      return _buildRail(
+        context,
+        window: window.width,
+        padding: padding,
+        placement: placement,
+        foldHint: foldHint,
+      );
     }
-    return _buildRail(context, window: window.width, topInset: padding.top);
+    return _buildBar(
+      context,
+      window: window.width,
+      padding: padding,
+      foldHint: foldHint,
+    );
   }
 
-  /// compact: bar at the bottom, detail overlaying it.
+  /// bar: the chrome is a horizontal strip at the bottom.
+  ///
+  /// Two panes still fit above it when the window is wide enough — an iPhone
+  /// Duo's inner display in portrait is 669 points across and Apple asks for
+  /// horizontal bars there — so the pane count is decided here the same way it
+  /// is under the rail, from [MasterDetailConfig.fits].
+  ///
+  /// The top inset stays with the screens, unlike the rail layout: on this
+  /// side of the threshold every screen still has an `AppBar` to reserve it.
+  /// With two panes the shell only takes the card margin off it first, so what
+  /// an `AppBar` reserves inside a card is what is left over the card.
+  Widget _buildBar(
+    BuildContext context, {
+    required double window,
+    required EdgeInsets padding,
+    Rect? foldHint,
+  }) {
+    final MasterDetailConfig? md =
+        shellConfig.branches[state.activeBranch].masterDetail;
+    final PaneDecoration panes = shellConfig.panes;
+    final double paneArea = PaneMetrics.paneAreaWidth(
+      window: window,
+      padding: padding,
+      placement: ChromePlacement.bottom,
+      railWidth: shellConfig.railWidth,
+      panes: panes,
+    );
+    if (md != null && md.fits(paneArea, gap: panes.gap)) {
+      final PaneUnderlap underlap = PaneMetrics.underlap(
+        padding: padding,
+        panes: panes,
+        placement: ChromePlacement.bottom,
+      );
+      return Scaffold(
+        key: shellConfig.scaffoldKey,
+        drawer: _drawer(context, rail: false),
+        resizeToAvoidBottomInset: false,
+        extendBody: shellConfig.extendBodyBehindBar,
+        body: _onCanvas(
+          context,
+          panes: panes,
+          // The cards bleed up under the status bar, the way they bleed under
+          // an inset at their side: only the margin is held back from the
+          // window's top edge, and what is left of the inset is handed to the
+          // screens inside, where each `AppBar` reserves it. So a title lands
+          // on the same line as it would with one pane, and the strip under
+          // the clock is the card's own background rather than bare canvas.
+          //
+          // Reserving the whole inset out here instead would be simpler and
+          // wrong on the display this layout exists for: iPhone Duo's inner
+          // screen in portrait has 82 points of top inset, and a card starting
+          // below it *plus* the margin leaves a band that deep unused.
+          child: _paneInsets(
+            context,
+            top: math.max(0.0, padding.top - panes.margin.top),
+            child: Builder(
+              builder: (BuildContext inner) => _inPaneArea(
+                panes: panes,
+                child: _twoPanes(
+                  inner,
+                  md,
+                  paneArea,
+                  underlap,
+                  underlap.left + panes.margin.left,
+                  foldHint,
+                ),
+              ),
+            ),
+          ),
+        ),
+        bottomNavigationBar: _barWidget(context),
+      );
+    }
+    return _buildStack(context);
+  }
+
+  /// bar, one pane: master in the body and the detail overlaying the bar.
   ///
   /// The drawer lives on this `Scaffold`, so it is reachable from every screen.
   /// One caveat: the detail layer is a sibling above it, so a non-empty detail
   /// covers an open drawer. In the root states, where a drawer is opened, the
   /// detail is empty and transparent.
-  Widget _buildCompact(BuildContext context) {
+  Widget _buildStack(BuildContext context) {
     return Stack(
       children: <Widget>[
         Scaffold(
@@ -284,32 +350,71 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// navigators by `GlobalKey` from inside the layout callback — which dropped
   /// the frame as soon as a deferred overlay child reactivated.
   ///
-  /// [topInset] is reserved once for the whole layout: on wide there is nobody
-  /// else to do it, since `AppBar` lives inside a pane and a pane starts at the
-  /// window edge.
+  /// The top inset is reserved once for the whole layout: on wide there is
+  /// nobody else to do it, since `AppBar` lives inside a pane and a pane starts
+  /// at the window edge. The horizontal insets are a different matter — they
+  /// come off the pane area, because a pane only bleeds under them; see
+  /// [PaneUnderlap].
   Widget _buildRail(
     BuildContext context, {
     required double window,
-    required double topInset,
+    required EdgeInsets padding,
+    required ChromePlacement placement,
+    Rect? foldHint,
   }) {
-    // The divider after the rail is part of the layout arithmetic, so the
-    // package draws it and a custom builder must not.
-    final Widget? railWidget = _railWidget(context);
     final PaneDecoration panes = shellConfig.panes;
     final RailDecoration rail = shellConfig.rail;
-    final double paneArea = paneAreaWidthFor(
+    // The reserve is needed before the rail is built: it is height the
+    // destinations cannot use, so it decides how many of them fit.
+    final (double reserveIfShown, SystemBarEnd reserveEnd) = _systemBarReserve(
+      MediaQuery.sizeOf(context),
+      padding,
+      placement,
+    );
+    // The divider after the rail is part of the layout arithmetic, so the
+    // package draws it and a custom builder must not.
+    final Widget? railWidget = _railWidget(context, reserve: reserveIfShown);
+    final double paneArea = PaneMetrics.paneAreaWidth(
       window: window,
-      hasRail: railWidget != null,
+      padding: padding,
+      placement: placement,
       railWidth: shellConfig.railWidth,
       panes: panes,
       rail: rail,
+      systemBarMetrics: shellConfig.systemBar,
+      hasChrome: railWidget != null,
+    );
+    // Tied to the presence of the rail, not to the immersive progress: the
+    // layout class is frozen while the rail slides out, and so is what the
+    // panes are allowed to count on.
+    final PaneUnderlap underlap = PaneMetrics.underlap(
+      padding: padding,
+      panes: panes,
+      placement: placement,
+      hasChrome: railWidget != null,
     );
     // What the rail takes while shown. Immersive mode animates this to zero,
     // but `paneArea` above stays computed from it — the layout class is frozen,
     // see `_railRow`.
+    // The rail joins the system's own column where there is one — that is
+    // where the camera and the status bar are, and the controls line up with
+    // them — so the two do not add up.
+    final double systemBar = railWidget == null
+        ? 0
+        : PaneMetrics.systemBarInset(padding: padding, placement: placement);
+    // Held off the edge so the destinations land on the line the system
+    // centres its own glyphs on; zero where there is no system bar to match.
+    final double edgeGap = systemBar > 0
+        ? shellConfig.systemBar.edgeGap(shellConfig.railWidth)
+        : 0;
     final double railRegion = railWidget == null
         ? 0
-        : rail.regionWidth(shellConfig.railWidth);
+        : PaneMetrics.railColumnWidth(
+            railWidth: shellConfig.railWidth,
+            systemBar: systemBar,
+            edgeGap: edgeGap,
+            rail: rail,
+          );
     final MasterDetailConfig? md =
         shellConfig.branches[state.activeBranch].masterDetail;
     return Scaffold(
@@ -327,7 +432,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         // the strip under the status bar stays background while the rail and
         // the panes start below it.
         child: Padding(
-          padding: EdgeInsets.only(top: topInset),
+          padding: EdgeInsets.only(top: padding.top),
           child: MediaQuery.removePadding(
             context: context,
             removeTop: true,
@@ -345,6 +450,13 @@ class AdaptiveShell<R> extends StatelessWidget {
                 window: window,
                 railRegion: railRegion,
                 paneArea: paneArea,
+                underlap: underlap,
+                placement: placement,
+                systemBar: systemBar,
+                edgeGap: edgeGap,
+                reserve: railWidget == null ? 0 : reserveIfShown,
+                reserveEnd: reserveEnd,
+                foldHint: foldHint,
               ),
             ),
           ),
@@ -364,6 +476,13 @@ class AdaptiveShell<R> extends StatelessWidget {
     required double window,
     required double railRegion,
     required double paneArea,
+    required PaneUnderlap underlap,
+    required ChromePlacement placement,
+    required double systemBar,
+    required double edgeGap,
+    required double reserve,
+    required SystemBarEnd reserveEnd,
+    required Rect? foldHint,
   }) {
     final ValueListenable<bool>? immersive = shellConfig.immersive;
     if (immersive == null) {
@@ -376,6 +495,13 @@ class AdaptiveShell<R> extends StatelessWidget {
         window: window,
         railRegion: railRegion,
         paneArea: paneArea,
+        underlap: underlap,
+        placement: placement,
+        systemBar: systemBar,
+        edgeGap: edgeGap,
+        reserve: reserve,
+        reserveEnd: reserveEnd,
+        foldHint: foldHint,
         progress: 1,
         immersive: false,
       );
@@ -400,6 +526,13 @@ class AdaptiveShell<R> extends StatelessWidget {
                   window: window,
                   railRegion: railRegion,
                   paneArea: paneArea,
+                  underlap: underlap,
+                  placement: placement,
+                  systemBar: systemBar,
+                  edgeGap: edgeGap,
+                  reserve: reserve,
+                  reserveEnd: reserveEnd,
+                  foldHint: foldHint,
                   progress: progress,
                   immersive: true,
                 ),
@@ -424,55 +557,140 @@ class AdaptiveShell<R> extends StatelessWidget {
     required double window,
     required double railRegion,
     required double paneArea,
+    required PaneUnderlap underlap,
+    required ChromePlacement placement,
+    required double systemBar,
+    required double edgeGap,
+    required double reserve,
+    required SystemBarEnd reserveEnd,
+    required Rect? foldHint,
     required double progress,
     required bool immersive,
   }) {
     final double livePaneArea = immersive
-        ? panes.paneAreaWidth(window - railRegion * progress)
-        : paneArea;
-    return Row(
-      children: <Widget>[
-        // The region is fixed at the declared width. Panes are laid out with
-        // absolute numbers, so what the rail occupies has to be right by
-        // construction: a rail growing with the length of its labels would eat
-        // into the panes and push the detail off the edge.
-        if (railWidget != null && immersive)
-          _railRegion(
-            context,
-            railWidget: railWidget,
-            rail: rail,
-            region: railRegion,
-            progress: progress,
+        ? math.max(
+            0.0,
+            panes.paneAreaWidth(window - railRegion * progress) -
+                underlap.horizontal,
           )
-        else if (railWidget != null) ...<Widget>[
-          _railCard(context, railWidget: railWidget, rail: rail),
-          if (rail.dividerWidth > 0) VerticalDivider(width: rail.dividerWidth),
-        ],
-        Expanded(
-          // The content area's left edge is the rail divider, not the screen
-          // edge, and the rail has already handled that inset. Tied to the
-          // presence of the rail rather than to the immersive progress, or
-          // padding would appear halfway through the animation.
-          child: MediaQuery.removePadding(
-            context: context,
-            removeLeft: railWidget != null,
-            child: _inPaneArea(
-              panes: panes,
-              // Threshold from the frozen width, widths from the live one.
-              child: md != null && md.fits(paneArea, gap: panes.gap)
-                  ? _twoPanes(context, md, livePaneArea)
-                  : _singlePanel(context),
-            ),
-          ),
+        : paneArea;
+    final bool onLeft = placement == ChromePlacement.left;
+    // Where the pane area starts in window coordinates — what a display
+    // feature's bounds are measured in. Only a rail on the left moves it, and
+    // while the immersive rail slides out it moves with it.
+    final double origin =
+        (onLeft ? railRegion * (immersive ? progress : 1) : 0) +
+        panes.margin.left +
+        underlap.left;
+    // The region is fixed at the declared width. Panes are laid out with
+    // absolute numbers, so what the rail occupies has to be right by
+    // construction: a rail growing with the length of its labels would eat
+    // into the panes and push the detail off the edge.
+    // [edgeGap] holds the rail off the window edge so its destinations land on
+    // the same line the system centres its glyphs on. Anything the column has
+    // over that goes on the inner side instead, against the panes.
+    final double slack = math.max(
+      0.0,
+      railRegion - rail.regionWidth(shellConfig.railWidth) - edgeGap,
+    );
+    final List<Widget> railRegionWidgets = <Widget>[
+      if (railWidget != null && immersive)
+        _railRegion(
+          context,
+          railWidget: railWidget,
+          rail: rail,
+          region: railRegion,
+          progress: progress,
+          onLeft: onLeft,
+          reserve: reserve,
+          reserveEnd: reserveEnd,
+        )
+      else if (railWidget != null) ...<Widget>[
+        if (onLeft && edgeGap > 0) SizedBox(width: edgeGap),
+        if (!onLeft && slack > 0) SizedBox(width: slack),
+        if (!onLeft && rail.dividerWidth > 0)
+          VerticalDivider(width: rail.dividerWidth),
+        _railCard(
+          context,
+          railWidget: railWidget,
+          rail: rail,
+          onLeft: onLeft,
+          reserve: reserve,
+          reserveEnd: reserveEnd,
         ),
+        if (onLeft && rail.dividerWidth > 0)
+          VerticalDivider(width: rail.dividerWidth),
+        if (onLeft && slack > 0) SizedBox(width: slack),
+        if (!onLeft && edgeGap > 0) SizedBox(width: edgeGap),
       ],
+    ];
+    final Widget content = Expanded(
+      // The content area stops at the rail divider rather than the window
+      // edge on the rail's side, and the rail has already handled that inset.
+      // Tied to the presence of the rail rather than to the immersive
+      // progress, or padding would appear halfway through the animation.
+      child: MediaQuery.removePadding(
+        context: context,
+        removeLeft: railWidget != null && onLeft,
+        removeRight: railWidget != null && !onLeft,
+        child: _inPaneArea(
+          panes: panes,
+          // Threshold from the frozen width, widths from the live one.
+          child: md != null && md.fits(paneArea, gap: panes.gap)
+              ? _twoPanes(context, md, livePaneArea, underlap, origin, foldHint)
+              : _singlePanel(context, underlap),
+        ),
+      ),
+    );
+    return Row(
+      children: onLeft
+          ? <Widget>[...railRegionWidgets, content]
+          : <Widget>[content, ...railRegionWidgets],
     );
   }
 
+  /// The column is painted as one piece, reserve included.
+  ///
+  /// `NavigationRail` paints only as far down as it is laid out, so pushing it
+  /// below the system bar would leave the top of the column showing the canvas
+  /// — and the strip the clock sits in would not read as part of the rail.
+  /// Resolved the way `NavigationRail` resolves its own background, so the
+  /// default rail joins up seamlessly.
+  Widget _railSurface(
+    BuildContext context, {
+    required RailDecoration rail,
+    required double reserve,
+    required SystemBarEnd end,
+    required Widget child,
+  }) {
+    if (reserve <= 0) {
+      return child;
+    }
+    final Color color =
+        rail.backgroundColor?.call(context) ??
+        NavigationRailTheme.of(context).backgroundColor ??
+        Theme.of(context).colorScheme.surface;
+    return ColoredBox(
+      color: color,
+      child: Padding(
+        padding: end == SystemBarEnd.top
+            ? EdgeInsets.only(top: reserve)
+            : EdgeInsets.only(bottom: reserve),
+        child: child,
+      ),
+    );
+  }
+
+  /// [reserve] is kept free at [reserveEnd] for the system's own vertical
+  /// bar, where the rail shares a column with one. It is inside the card, so it
+  /// moves no geometry: only the destinations move away from that end.
   Widget _railCard(
     BuildContext context, {
     required Widget railWidget,
     required RailDecoration rail,
+    required bool onLeft,
+    double reserve = 0,
+    SystemBarEnd reserveEnd = SystemBarEnd.top,
   }) {
     return SizedBox(
       // The margin goes outside, so `railWidth` stays the width of the widget.
@@ -487,12 +705,20 @@ class AdaptiveShell<R> extends StatelessWidget {
           // Material's `NavigationRail` carries a `SafeArea`, and in landscape
           // on a notched phone that inset is most of the declared width: the
           // region keeps its size while the destinations are squeezed into
-          // what is left. The rail covers the notch rather than growing by it,
-          // so the inset is not its business.
+          // what is left. The rail covers what is on its own edge rather than
+          // growing by it — on iPhone Duo that edge is the system's vertical
+          // bar — so the inset is not its business.
           child: MediaQuery.removePadding(
             context: context,
-            removeLeft: true,
-            child: railWidget,
+            removeLeft: onLeft,
+            removeRight: !onLeft,
+            child: _railSurface(
+              context,
+              rail: rail,
+              reserve: reserve,
+              end: reserveEnd,
+              child: railWidget,
+            ),
           ),
         ),
       ),
@@ -509,19 +735,33 @@ class AdaptiveShell<R> extends StatelessWidget {
     required RailDecoration rail,
     required double region,
     required double progress,
+    required bool onLeft,
+    double reserve = 0,
+    SystemBarEnd reserveEnd = SystemBarEnd.top,
   }) {
     return SizedBox(
       key: railRegionKey,
       width: region * progress,
       child: ClipRect(
         child: OverflowBox(
-          alignment: Alignment.centerRight,
+          // Pinned by its inner edge, so it slides out towards its own side
+          // of the window.
+          alignment: onLeft ? Alignment.centerRight : Alignment.centerLeft,
           minWidth: region,
           maxWidth: region,
           child: Row(
             children: <Widget>[
-              _railCard(context, railWidget: railWidget, rail: rail),
-              if (rail.dividerWidth > 0)
+              if (!onLeft && rail.dividerWidth > 0)
+                VerticalDivider(width: rail.dividerWidth),
+              _railCard(
+                context,
+                railWidget: railWidget,
+                rail: rail,
+                onLeft: onLeft,
+                reserve: reserve,
+                reserveEnd: reserveEnd,
+              ),
+              if (onLeft && rail.dividerWidth > 0)
                 VerticalDivider(width: rail.dividerWidth),
             ],
           ),
@@ -605,37 +845,104 @@ class AdaptiveShell<R> extends StatelessWidget {
     );
   }
 
+  /// Cuts a pane's padding down to what it actually reaches under.
+  ///
+  /// `MediaQuery.removePadding` is all or nothing, and with a
+  /// [PaneDecoration.margin] neither answer is right: the card is already held
+  /// away from the edge, so the screen inside it has less of the inset left to
+  /// clear than the window reports. Shaped after `removePadding`, which also
+  /// takes what it drops off `viewPadding`.
+  ///
+  /// An omitted side is left as the window reports it.
+  Widget _paneInsets(
+    BuildContext context, {
+    double? left,
+    double? right,
+    double? top,
+    required Widget child,
+  }) {
+    final MediaQueryData mq = MediaQuery.of(context);
+    final double dropLeft = left == null ? 0 : mq.padding.left - left;
+    final double dropRight = right == null ? 0 : mq.padding.right - right;
+    final double dropTop = top == null ? 0 : mq.padding.top - top;
+    if (dropLeft == 0 && dropRight == 0 && dropTop == 0) {
+      return child;
+    }
+    return MediaQuery(
+      data: mq.copyWith(
+        padding: mq.padding.copyWith(
+          left: left ?? mq.padding.left,
+          right: right ?? mq.padding.right,
+          top: top ?? mq.padding.top,
+        ),
+        viewPadding: mq.viewPadding.copyWith(
+          left: math.max(0.0, mq.viewPadding.left - dropLeft),
+          right: math.max(0.0, mq.viewPadding.right - dropRight),
+          top: math.max(0.0, mq.viewPadding.top - dropTop),
+        ),
+      ),
+      child: child,
+    );
+  }
+
   /// medium, and expanded with a collapsed empty detail — there the top layer
   /// is transparent and the master shows through at full width.
-  Widget _singlePanel(BuildContext context) {
-    return _paneCard(
+  Widget _singlePanel(BuildContext context, PaneUnderlap underlap) {
+    return _paneInsets(
       context,
-      Stack(
-        children: <Widget>[
-          _mastersStack(),
-          IgnorePointer(
-            ignoring: _activeDetailEmpty,
-            // Same presentation as compact, so the same platform transition.
-            child: _detailsStack(inPane: false),
-          ),
-        ],
+      left: underlap.left,
+      right: underlap.right,
+      child: _paneCard(
+        context,
+        Stack(
+          children: <Widget>[
+            _mastersStack(),
+            IgnorePointer(
+              ignoring: _activeDetailEmpty,
+              // Same presentation as compact, so the same platform transition.
+              child: _detailsStack(inPane: false),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   static const Duration detailRevealDuration = Duration(milliseconds: 240);
 
-  Widget _twoPanes(BuildContext context, MasterDetailConfig md, double width) {
+  /// [origin] is the pane area's left edge in window coordinates, which is
+  /// what a display feature's bounds are measured in.
+  Widget _twoPanes(
+    BuildContext context,
+    MasterDetailConfig md,
+    double width,
+    PaneUnderlap underlap,
+    double origin,
+    Rect? foldHint,
+  ) {
+    // The platform first; the app's own answer only fills the silence.
+    final PaneFold? fold = md.alignToFold
+        ? FoldMetrics.paneFold(
+                features: MediaQuery.displayFeaturesOf(context),
+                origin: origin,
+                paneArea: width,
+              ) ??
+              FoldMetrics.fromBounds(
+                bounds: foldHint,
+                origin: origin,
+                paneArea: width,
+              )
+        : null;
     final PaneSplitController? split = shellConfig.paneSplit;
     if (split == null) {
-      return _resizablePanes(context, md, width, null);
+      return _resizablePanes(context, md, width, underlap, fold, null);
     }
     // Only this subtree rebuilds on a drag; the delegate knows nothing about
     // it.
     return ListenableBuilder(
       listenable: split,
       builder: (BuildContext context, Widget? _) =>
-          _resizablePanes(context, md, width, split),
+          _resizablePanes(context, md, width, underlap, fold, split),
     );
   }
 
@@ -649,20 +956,39 @@ class AdaptiveShell<R> extends StatelessWidget {
   ///
   /// The detail is always at its final width and simply waits off screen, so
   /// its own layout constraints are never evaluated at a shrinking width.
+  ///
+  /// [width] is the *usable* pane area: the insets the panes merely bleed
+  /// under are already gone from it, and so every width derived from it —
+  /// including [MasterDetailConfig.detailMinWidth] and the drag limits — is a
+  /// width the user actually sees. The panes are then laid out across the
+  /// physical area, each one wider than its share by the inset on its own
+  /// side, which is exactly what its screen insets away again.
   Widget _resizablePanes(
     BuildContext context,
     MasterDetailConfig md,
     double width,
+    PaneUnderlap underlap,
+    PaneFold? fold,
     PaneSplitController? split,
   ) {
     final PaneDecoration panes = shellConfig.panes;
     final Object branchId = shellConfig.branches[state.activeBranch].id;
-    final double masterWidth = md.masterWidthFor(
-      width,
-      gap: panes.gap,
-      fraction: split?.fractionOf(branchId),
-    );
+    // A fold both panes clear takes the boundary: a pane straddling a crease
+    // is bent across two planes, which no ratio or drag is worth. Otherwise
+    // the width decides, as everywhere else.
+    final bool onFold = fold != null && md.fitsAround(fold, width);
+    final double gap = onFold ? math.max(panes.gap, fold.width) : panes.gap;
+    final double masterWidth = onFold
+        ? fold.start
+        : md.masterWidthFor(
+            width,
+            gap: gap,
+            fraction: split?.fractionOf(branchId),
+          );
     final bool collapsed = md.collapseWhenDetailEmpty && _activeDetailEmpty;
+    // Physical: what the `Stack` below actually spans.
+    final double area = width + underlap.horizontal;
+    final double boundary = underlap.left + masterWidth;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: collapsed ? 0 : 1),
       duration: detailRevealDuration,
@@ -670,10 +996,14 @@ class AdaptiveShell<R> extends StatelessWidget {
       builder: (BuildContext context, double reveal, Widget? _) => _splitLayout(
         context,
         panes: panes,
-        split: width + (masterWidth - width) * reveal,
-        detailWidth: width - masterWidth - panes.gap,
+        underlap: underlap,
+        gap: gap,
+        split: area + (boundary - area) * reveal,
+        detailWidth: area - boundary - gap,
         collapsed: collapsed,
-        handle: split == null || collapsed
+        // While the fold holds the boundary there is nothing to drag: the
+        // hinge decided.
+        handle: split == null || collapsed || onFold
             ? null
             : _splitHandle(
                 md: md,
@@ -728,6 +1058,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   Widget _splitLayout(
     BuildContext context, {
     required PaneDecoration panes,
+    required PaneUnderlap underlap,
+    required double gap,
     required double split,
     required double detailWidth,
     required bool collapsed,
@@ -744,25 +1076,33 @@ class AdaptiveShell<R> extends StatelessWidget {
           // The master's right edge is the gap, not the screen edge, so it does
           // not need the right inset — unless the detail is collapsed and it
           // spans the full width.
-          child: MediaQuery.removePadding(
-            context: context,
-            removeRight: !collapsed,
+          child: _paneInsets(
+            context,
+            left: underlap.left,
+            right: collapsed ? underlap.right : 0,
             child: _paneCard(context, _mastersStack()),
           ),
         ),
         Positioned(
-          left: split + panes.gap,
+          left: split + gap,
           top: 0,
           bottom: 0,
           width: detailWidth,
-          child: _paneCard(
+          // Its left edge is the gap; on the right it is the pane that bleeds
+          // under the inset, and this is the screen that has to inset it away.
+          child: _paneInsets(
             context,
-            Stack(
-              children: <Widget>[
-                if (_activeDetailEmpty && !collapsed)
-                  Positioned.fill(child: _detailPlaceholder(context)),
-                _detailsStack(inPane: true),
-              ],
+            left: 0,
+            right: underlap.right,
+            child: _paneCard(
+              context,
+              Stack(
+                children: <Widget>[
+                  if (_activeDetailEmpty && !collapsed)
+                    Positioned.fill(child: _detailPlaceholder(context)),
+                  _detailsStack(inPane: true),
+                ],
+              ),
             ),
           ),
         ),
@@ -770,7 +1110,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           Positioned(
             // Centred on the gap and wider than it, so it reaches onto both
             // panes' edges. Last child, over both panes.
-            left: split + panes.gap / 2 - panes.splitHandleWidth / 2,
+            left: split + gap / 2 - panes.splitHandleWidth / 2,
             top: 0,
             bottom: 0,
             width: panes.splitHandleWidth,
@@ -802,16 +1142,187 @@ class AdaptiveShell<R> extends StatelessWidget {
     return custom(context, state.activeBranch, onSelectBranch);
   }
 
-  Widget? _railWidget(BuildContext context) {
+  /// What the system's vertical bar keeps free in the rail's column, and at
+  /// which end.
+  ///
+  /// Zero unless a one-sided vertical bar is on one of the window's edges, so
+  /// tablets, Android, desktop windows and notched iPhones never get past the
+  /// first checks. At the bottom the rail's own `SafeArea` already keeps the
+  /// home indicator's inset, so only the rest of the reserve is added.
+  (double, SystemBarEnd) _systemBarReserve(
+    Size window,
+    EdgeInsets padding,
+    ChromePlacement placement,
+  ) {
+    final SystemBarMetrics bar = shellConfig.systemBar;
+    if (PaneMetrics.systemBarInset(padding: padding, placement: placement) >
+        0) {
+      final double reserve = window.width > window.height
+          ? bar.landscapeReserve
+          : bar.reserve;
+      final SystemBarEnd end = bar.end(window, placement);
+      return switch (end) {
+        SystemBarEnd.top => (reserve, end),
+        SystemBarEnd.bottom => (math.max(0.0, reserve - padding.bottom), end),
+      };
+    }
+    final ChromePlacement far = switch (placement) {
+      ChromePlacement.left => ChromePlacement.right,
+      ChromePlacement.right => ChromePlacement.left,
+      ChromePlacement.bottom => ChromePlacement.bottom,
+    };
+    if (padding.top == 0 &&
+        PaneMetrics.systemBarInset(padding: padding, placement: far) > 0) {
+      return (bar.cornerClearance, SystemBarEnd.top);
+    }
+    return (0.0, SystemBarEnd.top);
+  }
+
+  Widget? _railWidget(BuildContext context, {double reserve = 0}) {
     // Unlike the bar, the rail handles a hidden branch natively.
     if (!chrome) {
       return null;
     }
     final ShellChromeBuilder? custom = shellConfig.railBuilder;
     if (custom == null) {
-      return _rail(context);
+      return _rail(context, reserve: reserve);
     }
     return custom(context, state.activeBranch, onSelectBranch);
+  }
+
+  /// Height of each destination, from its own label.
+  ///
+  /// A label too wide for the rail takes a second line, and only that
+  /// destination grows: Material lays each one out on its own, so a rail of
+  /// "Home"s beside one "People" is 64s beside one 80 rather than all 80s.
+  /// Counted the same way, or a single long label would push its neighbours
+  /// into the menu with the column still half empty.
+  ///
+  /// Laid out with a `TextPainter`, which is arithmetic over a declared width
+  /// rather than a measurement of the tree.
+  List<double> _destinationExtents(BuildContext context, List<int> items) {
+    final double? declared = shellConfig.railDestinationExtent;
+    if (declared != null) {
+      return List<double>.filled(items.length, declared);
+    }
+    // The same styles `NavigationRail` resolves for itself, or a themed rail
+    // with a larger label would be counted at the wrong height. The selected
+    // one can differ from the rest, and a destination is counted at the taller
+    // of the two: which one it is changes as you navigate, and a rail whose
+    // last destination comes and goes under the tap is worse than one that
+    // keeps a line of slack.
+    final NavigationRailThemeData railTheme = NavigationRailTheme.of(context);
+    final TextTheme text = Theme.of(context).textTheme;
+    final List<TextStyle?> styles = <TextStyle?>[
+      railTheme.unselectedLabelTextStyle ?? text.labelMedium,
+      railTheme.selectedLabelTextStyle ?? text.labelMedium,
+    ];
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextDirection direction = Directionality.of(context);
+    final List<double> extents = <double>[];
+    for (final int b in items) {
+      double label = 0;
+      for (final TextStyle? style in styles) {
+        final TextPainter painter = TextPainter(
+          text: TextSpan(text: shellConfig.branches[b].label, style: style),
+          textDirection: direction,
+          textScaler: scaler,
+        )..layout(maxWidth: shellConfig.railWidth - kRailLabelInset);
+        label = math.max(label, painter.height);
+        painter.dispose();
+      }
+      extents.add(kRailDestinationBase + label);
+    }
+    return extents;
+  }
+
+  /// How many of [extents] the rail's column can hold, in order.
+  ///
+  /// Arithmetic, not measurement: the shell knows the window, the inset it
+  /// reserved, the rail card's margin, what the system bar keeps at its end
+  /// and how tall every destination is, because every one of those is
+  /// declared. A `LayoutBuilder` here is the one place `doc/design.md` warns
+  /// about.
+  int _railRoom(
+    BuildContext context, {
+    required double reserve,
+    required List<double> extents,
+    required bool withButton,
+  }) {
+    final Size window = MediaQuery.sizeOf(context);
+    final EdgeInsets padding = MediaQuery.paddingOf(context);
+    // The card spans the window below the inset the shell reserved once; the
+    // rail's own `SafeArea` then takes the bottom one.
+    final double column =
+        window.height -
+        padding.top -
+        shellConfig.rail.margin.vertical -
+        reserve -
+        padding.bottom -
+        kRailLeadingSpacer -
+        (withButton ? kRailOverflowExtent : 0);
+    double used = 0;
+    int room = 0;
+    for (final double extent in extents) {
+      if (used + extent > column) {
+        break;
+      }
+      used += extent;
+      room++;
+    }
+    return room;
+  }
+
+  /// The destinations that do not fit, behind a menu at the end of the rail.
+  ///
+  /// The order never changes — items overflow from the end, and an active
+  /// branch among them does not jump into view, because a destination that
+  /// moves is harder to find than one that is simply elsewhere. The button
+  /// carries the selection instead.
+  ///
+  /// The slot is [kRailOverflowExtent] tall whoever fills it. That height is
+  /// one of the terms in the count above, so a taller button would overflow
+  /// the column it is there to keep from overflowing.
+  Widget _railOverflow(BuildContext context, List<int> hidden, bool active) {
+    final ShellRailOverflowBuilder? custom = shellConfig.railOverflowBuilder;
+    return SizedBox(
+      height: kRailOverflowExtent,
+      child: Center(
+        child: custom == null
+            ? _railOverflowButton(context, hidden, active)
+            : custom(context, hidden, onSelectBranch, active),
+      ),
+    );
+  }
+
+  /// The package's own button: a menu of what the column could not hold,
+  /// filled while the active branch is one of them.
+  Widget _railOverflowButton(
+    BuildContext context,
+    List<int> hidden,
+    bool active,
+  ) {
+    return MenuAnchor(
+      menuChildren: <Widget>[
+        for (final int b in hidden)
+          MenuItemButton(
+            leadingIcon: Icon(shellConfig.branches[b].icon),
+            onPressed: () => onSelectBranch(b),
+            child: Text(shellConfig.branches[b].label),
+          ),
+      ],
+      builder: (BuildContext context, MenuController c, Widget? _) => active
+          ? IconButton.filledTonal(
+              key: railOverflowKey,
+              icon: const Icon(Icons.more_horiz),
+              onPressed: () => c.isOpen ? c.close() : c.open(),
+            )
+          : IconButton(
+              key: railOverflowKey,
+              icon: const Icon(Icons.more_horiz),
+              onPressed: () => c.isOpen ? c.close() : c.open(),
+            ),
+    );
   }
 
   Widget? _drawer(BuildContext context, {required bool rail}) {
@@ -836,13 +1347,35 @@ class AdaptiveShell<R> extends StatelessWidget {
     );
   }
 
-  Widget _rail(BuildContext context) {
-    final List<int> items = _chromeBranches;
+  Widget _rail(BuildContext context, {double reserve = 0}) {
+    List<int> items = _chromeBranches;
+    List<int> hidden = const <int>[];
+    final List<double> extents = _destinationExtents(context, items);
+    if (shellConfig.railOverflow &&
+        _railRoom(
+              context,
+              reserve: reserve,
+              extents: extents,
+              withButton: false,
+            ) <
+            items.length) {
+      final int room = _railRoom(
+        context,
+        reserve: reserve,
+        extents: extents,
+        withButton: true,
+      );
+      hidden = items.sublist(room);
+      items = items.sublist(0, room);
+    }
     final int pos = items.indexOf(state.activeBranch);
     return NavigationRail(
       selectedIndex: pos < 0 ? null : pos,
       onDestinationSelected: (int i) => onSelectBranch(items[i]),
       labelType: NavigationRailLabelType.all,
+      trailing: hidden.isEmpty
+          ? null
+          : _railOverflow(context, hidden, hidden.contains(state.activeBranch)),
       destinations: <NavigationRailDestination>[
         for (final int b in items)
           NavigationRailDestination(
@@ -1003,12 +1536,4 @@ class _PaneSplitDots extends StatelessWidget {
       ],
     );
   }
-}
-
-class _DefaultDetailPlaceholder extends StatelessWidget {
-  const _DefaultDetailPlaceholder();
-
-  @override
-  Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: Text('Select an item')));
 }

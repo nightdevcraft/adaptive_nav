@@ -17,6 +17,8 @@ export 'src/adaptive_route_information_parser.dart';
 export 'src/adaptive_router_delegate.dart';
 // App screens read these too, not just pages this package builds.
 export 'src/entry_page.dart' show DetailEntryScope, DetailPaneScope;
+export 'src/fold.dart';
 export 'src/nav_config.dart';
 export 'src/nav_state.dart';
+export 'src/pane_metrics.dart';
 export 'src/pane_split.dart';

@@ -1,8 +1,9 @@
 name: adaptive_nav
 description: >-
-  A Navigator 2.0 router that renders one navigation state as either a stack or
-  master-detail panes, and keeps screen state across window resizes.
-version: 0.9.0
+  A Navigator 2.0 router that renders one navigation state as a stack or as
+  master-detail panes and keeps screen state across resizes and folds. Ready
+  for iPhone Duo.
+version: 0.10.0
 
 repository: https://github.com/nightdevcraft/adaptive_nav
 issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues
@@ -10,6 +11,8 @@ issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues
 screenshots:
   # Quoted: a description may well contain a colon, and YAML would read that
   # as a mapping key.
+  - description: 'iPhone Duo folded, unfolded and turned: the rail follows the system bar and the open screen keeps its state.'
+    path: doc/screenshots/iphone-duo.gif
   - description: 'A desktop window resized across both layout thresholds; the open detail keeps its state throughout.'
     path: doc/screenshots/macos-example.gif
   - description: 'A desktop window with the navigation rail and two panes side by side.'
@@ -25,8 +28,8 @@ topics:
   - navigation
   - router
   - adaptive
-  - responsive
   - master-detail
+  - foldable
 
 environment:
   sdk: ^3.10.8

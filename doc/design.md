@@ -51,8 +51,41 @@ The consequence is that every width has to be known without measuring:
 
 An app that computes "is this the wide layout" with its own formula has to
 subtract the same values, or the shell and the screens will disagree at the
-boundary. The shell computes it in `paneAreaWidthFor`, which is currently
-internal — an app has to mirror the same subtraction.
+boundary. That arithmetic is `PaneMetrics`, and it is exported for exactly this
+reason.
+
+## A pane bleeds under an inset; it does not own the width
+
+`PaneMetrics.paneAreaWidth` subtracts the horizontal safe-area insets that
+nothing else covers, and the panes are then laid out *wider* than their share
+by the same amount.
+
+This reads like a contradiction and is not. Apple's own rule is that background
+reaches past the safe area while foreground stays inside it, so a pane card has
+to touch the window edge — stopping short would leave a strip of canvas beside
+an opaque screen. But the width under the status bar is not width the screen
+can use, so it must not count towards `fits`, towards `paneRatio`, or towards
+`detailMinWidth`. The two requirements are met by laying the pane out over the
+inset and handing the inset down in its `MediaQuery`, where the screen's own
+`SafeArea` takes it away again. `PaneUnderlap` is the amount involved.
+
+On a notched phone this was worth a couple of pixels, which is why the first
+version of the arithmetic simply ignored insets. iPhone Duo made it visible:
+its status bar is a vertical strip 84 points wide, on the left or on the right
+depending on the posture. Dragging the divider fully right on the inner display
+in landscape left the detail 276 points wide while `detailMinWidth` said 360.
+`duo_poses_test.dart` pins that number down.
+
+Two details that follow from the same reasoning:
+
+- **The inset on the rail's own edge belongs to the rail.** It is covered or
+  shared there (see below), so the pane against it does not also pay. An inset
+  on any other edge is the panes' to bleed under — including a system bar the
+  rail did not go to.
+- **`PaneDecoration.margin` is subtracted first, and only what is left of the
+  inset counts.** A card held 12 points off the edge underlaps 84 − 12 of the
+  status bar, and the 12 are already gone as decoration. Counting the whole
+  inset again would take it twice.
 
 ## Three layouts, not two
 
@@ -67,6 +100,97 @@ Chrome and pane count are decided separately:
 Two states would be simpler and wrong: a wide window with a narrow content area
 has room for a rail but not for two unsqueezed panes. The chrome threshold is a
 breakpoint; the pane count is `MasterDetailConfig.fits`.
+
+The separation turned out to be load-bearing. iPhone Duo's inner display in
+portrait wants a bottom bar *and* two panes, which the table above never
+produces — every wide layout in it has a rail. Because the two decisions were
+already independent, the fourth combination cost one branch in `_buildBar`
+rather than a fifth layout.
+
+That branch splits the top inset instead of reserving it whole. The question is
+who is at the window's top edge: with one pane the screen is, and its `AppBar`
+reserves the inset itself; with two panes a *card* is, and neither end of the
+inset belongs entirely to the shell or entirely to the screen. Reserving it in
+the shell — as the rail layout does — leaves the card starting below the inset
+*and* below its own margin, which on the display this branch exists for is 94
+points of bare canvas under the clock. Leaving it to the screens has each
+`AppBar` reserve it inside the card, below the margin, and sit that much too
+low.
+
+So the card bleeds up under the status bar the way the panes bleed under a
+horizontal inset: the margin is held back from the window's top edge, and
+`padding.top − margin.top` is handed to the screens, where the `AppBar`
+reserves it. The title lands on the same line either way; what changes is that
+the strip under the clock is the card's own background and the card is 70
+points taller.
+
+## The chrome follows the system's own bars
+
+`AdaptiveShellConfig.chromeLayout` returns where the chrome goes — bottom, left
+or right — instead of the "rail or bar" boolean it used to be.
+
+The third answer exists because of iPhone Duo. The device puts the status bar
+and the Dynamic Island in a vertical strip along one edge and asks apps to put
+their bars on the same edge, so that controls stay where the hand is as the
+device folds and turns. The strip moves: right on the outer display in
+portrait, left when that display turns. On the inner display in portrait it
+goes back to the top, and Apple asks for ordinary horizontal bars there.
+
+None of that needs a plugin, a platform channel or `displayFeatures`. The
+system announces its choice in `MediaQuery.padding`, and the discriminator is
+**asymmetry**:
+
+| | left | top | right |
+| --- | --- | --- | --- |
+| iPhone 18 Pro, portrait | 0 | 62 | 0 |
+| iPhone 18 Pro, landscape | 62 | 0 | 62 |
+| iPad | 0 | 24 | 0 |
+| Duo outer, portrait | 0 | 0 | **84** |
+| Duo outer, landscape | **84** | 0 | 0 |
+| Duo inner, portrait | 0 | 82 | 0 |
+| Duo inner, landscape | 0 | 0 | **84** |
+
+A notched iPhone in landscape reserves both sides, and a display cutout
+reserves one but is half as wide; a bar standing on its end is the only thing
+that is wide *and* one-sided. The inner display in portrait is then separated
+from a tablet of the same proportions by the depth of its top inset — 82
+against 24 — which is the system saying "this is a phone".
+
+Both thresholds are empirical, and both are named constants with the
+measurements in their doc comments. `chrome_layout_test.dart` asserts that
+every non-Duo pose still decides exactly as the old width breakpoint did; that
+test is the contract.
+
+### The rail joins the system's column; it does not take a second one
+
+On the outer display the camera sits at the end of the vertical strip and the
+status bar runs below it, and Apple's point is that the controls line up with
+the camera. So the rail goes *into* that column: `PaneMetrics.railColumnWidth`
+is the wider of the rail's own region and the system's inset, never their sum,
+and `AdaptiveShellConfig.systemBarReserve` keeps the top of it free so the
+destinations start below the clock rather than under it.
+
+Two numbers there are measured, not derived, because nothing reports them: how
+far down the system's glyphs end, and the line they are centred on. The second
+one is not the middle of the column — the symmetric wifi glyph sits 36 points
+into an 84-point column, which is 48 in from the window edge — so a rail simply
+centred in the column would still miss the clock by six points, and a rail
+flush against the edge misses it by eight. `SystemBarMetrics` holds both, with
+the measurements in its doc comment, and is configurable for exactly the reason
+that they are a screenshot's word rather than an API's.
+
+Sharing rather than stacking also settles the pane count without a rule about
+displays. The outer display gives up 84 points to the column and keeps 382 in
+portrait and 594 in landscape, both below any minimum wide enough to split the
+inner display's 669 — so the outer display collapses to a single pane on its
+own, which is what Apple asks for.
+
+The inner display in landscape is the other case, and it does not follow the
+bar. There is room for the rail and both panes in the arrangement they have on
+every other device, and moving the rail to the trailing edge for one posture
+would make the layout jump as the device unfolds. So the rail leads, and the
+detail pane bleeds under the system bar on the far edge like any other inset —
+which is what the underlap arithmetic above is for.
 
 ## Transitions follow the layout, not the push
 
@@ -150,6 +274,69 @@ panes. It changes geometry and nothing else:
   and a floating bar comes from `barBuilder` anyway.
 - **The flag is read-only for the package.** A shell that silently cleared the
   app's flag would leave the app out of sync with the picture.
+
+## The hinge outranks the ratio
+
+While the device is half open, `MasterDetailConfig.alignToFold` puts the pane
+boundary on the crease and parts the panes by its width.
+
+This is the one case where the split's position is not a preference. A ratio,
+or a width the user dragged, is a choice about how to divide a flat plane;
+half open there is no flat plane, and a pane laid across the crease is bent
+over two of them. So the fold wins while it is reported active, the divider
+stops being draggable — the hinge decided, and a handle would be a lie — and
+the app's width comes back when the device goes flat. The boundary moves once
+and once back rather than settling somewhere new, which is what the guidance
+to keep folding calm asks for.
+
+It wins only where both panes still clear their minimums around it. A crease
+near one edge would squeeze one pane below the width it declared, and the
+package would rather ignore the hinge than break its own promise.
+
+`FoldMetrics` reads `MediaQuery.displayFeatures` and takes a feature only if it
+is a fold, **active**, **vertical** and **inside the pane area**. A flat
+posture reports the fold too, and a crease on a continuous display occludes
+nothing; a horizontal fold says nothing about a vertical boundary; and a fold
+behind the rail is not a boundary either pane could sit against.
+
+The framework fills `displayFeatures` on Android and not yet on iOS, so this
+runs on a book-style foldable today and is inert on iPhone Duo until the
+framework catches up — and there is nothing to change here when it does. It is
+also not reachable by hand: Xcode 27.1's simulator has open, closed and rotate
+and no posture between them, so `fold_split_test.dart` injects the feature.
+
+## Counting the rail's destinations instead of measuring them
+
+The default rail hides what its column cannot hold behind a menu at its end.
+Deciding how many that is means knowing the column's height and a
+destination's — and the second one is not a constant, because a label too wide
+for an 80-point rail takes a second line and that destination grows with it.
+"Home" is 64 points; "People" is 80.
+
+The obvious answer is a `LayoutBuilder`, and it is the one this file already
+has a section against: the rail carries `OverlayPortal` tooltips, which is
+exactly the combination that used to assert. So instead the shell lays the
+label out with a `TextPainter` — arithmetic over the *declared* `railWidth`,
+not a measurement of the tree — and adds it to `kRailDestinationBase`. Every
+other term is already declared or known: the window, the inset reserved once,
+the rail card's margin, what the system bar keeps, the button's own height.
+
+The heights are added up one destination at a time, not multiplied out from
+the tallest. Material lays each destination out on its own — a rail of "Home"s
+beside one "People" is a column of 64s with a single 80 in it — so counting
+them all at 80 lost a whole destination to a single long label and left the
+column visibly short of the menu it had just filled.
+
+That is also why the button's own height is fixed rather than measured: a
+`railOverflowBuilder` supplies the widget and the shell supplies the
+56-point slot, so the term the count spends on the button stays a term the
+count knows. An app that wants more than a slot has `railBuilder`, where the
+whole rail — overflow included — is its own.
+
+`rail_overflow_test.dart` pins the two measured numbers and then sweeps
+heights against destination counts, with wrapping labels and short ones,
+asserting that nothing ever overflows. One spacer forgotten and that sweep
+fails by exactly that spacer, which is the point of it.
 
 ## Guards run on every way out
 
@@ -243,7 +430,9 @@ one letter of the label per line. A custom rail from `railBuilder` gets the same
 treatment, so the declared `railWidth` stays the width the rail can actually
 lay out into.
 
-**The top inset is handled once, by the shell.** On compact the screen's
-`AppBar` reserves it. On wide the screen lives inside a pane whose top edge is
-the window edge, so without a reserve a floating card slides under the status
-bar.
+**The top inset is handled once.** On compact the screen's `AppBar` reserves
+it. Under the rail the shell does, for the whole layout: the screen lives
+inside a pane whose top edge is the window edge, so without a reserve a
+floating card slides under the status bar. Under a bar with two panes the two
+share it, and the card does slide under the status bar on purpose — see the
+bar-with-two-panes branch above.

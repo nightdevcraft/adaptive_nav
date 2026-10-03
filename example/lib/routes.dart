@@ -52,6 +52,24 @@ class SettingsRoute extends AppRoute {
   int get hashCode => (SettingsRoute).hashCode;
 }
 
+/// A section that is only there to fill the chrome: enough of them and the
+/// rail runs out of column, which is what the overflow menu is for.
+class PlaceholderTab extends AppRoute {
+  const PlaceholderTab(this.index);
+
+  final int index;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlaceholderTab && other.index == index;
+
+  @override
+  int get hashCode => Object.hash(PlaceholderTab, index);
+}
+
+/// Branch index of the first placeholder; People is 0 and Settings is 1.
+const int kFirstPlaceholderBranch = 2;
+
 /// Deep links and the address bar on the web go through this codec.
 class AppRouteCodec extends RouteCodec<AppRoute> {
   const AppRouteCodec();
@@ -62,6 +80,7 @@ class AppRouteCodec extends RouteCodec<AppRoute> {
     PersonDetail(:final int id) => Uri.parse('/people/$id'),
     PersonEdit(:final int id) => Uri.parse('/people/$id/edit'),
     SettingsRoute() => Uri.parse('/settings'),
+    PlaceholderTab(:final int index) => Uri.parse('/tab/$index'),
   };
 
   @override
@@ -69,6 +88,12 @@ class AppRouteCodec extends RouteCodec<AppRoute> {
     final List<String> seg = uri.pathSegments;
     if (seg.isNotEmpty && seg.first == 'settings') {
       return const SettingsRoute();
+    }
+    if (seg.length >= 2 && seg.first == 'tab') {
+      final int? index = int.tryParse(seg[1]);
+      if (index != null) {
+        return PlaceholderTab(index);
+      }
     }
     if (seg.length >= 2 && seg.first == 'people') {
       final int? id = int.tryParse(seg[1]);
@@ -84,6 +109,7 @@ class AppRouteCodec extends RouteCodec<AppRoute> {
   @override
   int branchOf(AppRoute route) => switch (route) {
     SettingsRoute() => 1,
+    PlaceholderTab(:final int index) => kFirstPlaceholderBranch + index,
     PeopleList() || PersonDetail() || PersonEdit() => 0,
   };
 }

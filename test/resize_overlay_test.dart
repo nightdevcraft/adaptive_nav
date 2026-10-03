@@ -11,7 +11,7 @@ import '_harness/resize.dart';
 /// Both thresholds are driven here. The harness screens carry an
 /// `OverlayPortal`; without it the hole did not reproduce.
 void main() {
-  // Demo harness thresholds: the rail from 600 (`defaultShowsRail`), two panes
+  // Demo harness thresholds: the rail from 600 (`defaultChromeLayout`), two panes
   // once the content area (window - rail 80 - divider 1) fits 320 + 360 + 1.
   const Size compact = Size(500, 900);
   const Size singlePane = Size(700, 900); // rail, one pane (619 < 681)

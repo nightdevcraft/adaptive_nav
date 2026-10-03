@@ -12,6 +12,14 @@ move between the layouts under stable `GlobalKey`s.
 The package is generic over your route type `R` and knows nothing about your
 screens. You supply the branches, the `R ↔ URL` codec and the guards.
 
+> **Ready for iPhone Duo.** On the outer display the rail moves into the
+> system's own column, under the camera, and follows it as the phone turns; the
+> inner display gets two panes, with a rail in landscape and a bottom bar in
+> portrait. The screens keep their state through every fold. Nothing to
+> configure — see [iPhone Duo](#iphone-duo).
+
+![iPhone Duo folded and unfolded, turned both ways: the rail follows the system bar, the panes split on the inner display, and the open screen survives every change](doc/screenshots/iphone-duo.gif)
+
 ![A desktop window being resized: the master fills it, a detail pane arrives, and the window narrows until the detail takes the whole area](doc/screenshots/macos-example.gif)
 
 | Rotating a phone | Landscape: rail, two panes | Portrait: one stack |
@@ -22,7 +30,7 @@ screens. You supply the branches, the `R ↔ URL` codec and the guards.
 
 ```yaml
 dependencies:
-  adaptive_nav: ^0.9.0
+  adaptive_nav: ^0.10.0
 ```
 
 ## Quick start
@@ -109,10 +117,10 @@ MaterialApp.router(
 
 A complete, runnable app is in [`example/`](example).
 
-## The three layouts
+## The layouts
 
-Chrome and pane count are decided **separately**, which gives three states
-rather than two:
+Chrome and pane count are decided **separately**, so they combine rather than
+step through fixed states:
 
 | Window width | Chrome | Panes |
 | --- | --- | --- |
@@ -122,11 +130,33 @@ rather than two:
 
 ![A desktop window with the rail on the left and two panes side by side](doc/screenshots/macos-wide-two-screens.png)
 
-The chrome threshold is a width breakpoint (`AdaptiveShellConfig.showsRail`).
+A bar with two panes above it is the fourth combination, and it exists for one
+device: iPhone Duo's inner display in portrait is 669 points across and Apple
+asks for horizontal bars there. See [iPhone Duo](#iphone-duo).
+
+Where the chrome goes is `AdaptiveShellConfig.chromeLayout`, which returns a
+`ChromePlacement` — `bottom`, `left` or `right`.
 The pane count is decided by `MasterDetailConfig.fits` — whether the master and
-the detail both fit at their minimum widths, with the decoration's margins and
-gap already subtracted. A wide window with a narrow content area therefore
-stays single-pane, which is the right answer.
+the detail both fit at their minimum widths, with the decoration's margins, the
+gap and any safe-area inset the panes only bleed under already subtracted. A
+wide window with a narrow content area therefore stays single-pane, which is
+the right answer.
+
+`PaneMetrics` is that arithmetic, exported so an app that decides "is this the
+wide layout" for itself arrives at the same number:
+
+```dart
+final Size window = MediaQuery.sizeOf(context);
+final EdgeInsets padding = MediaQuery.paddingOf(context);
+final double panes = PaneMetrics.paneAreaWidth(
+  window: window.width,
+  padding: padding,
+  placement: shellConfig.chromeLayout(window, padding),
+  railWidth: shellConfig.railWidth,
+  panes: shellConfig.panes,
+  rail: shellConfig.rail,
+);
+```
 
 While the detail is empty, `collapseWhenDetailEmpty` (default `true`) collapses
 the split and gives the master the full width — no placeholder column next to an
@@ -296,18 +326,141 @@ with `resizeToAvoidBottomInset: false`, so a screen inside a pane needs its own
 The reasoning behind these, and behind most of the design, is in
 [`doc/design.md`](doc/design.md).
 
-## Not yet
+## iPhone Duo
 
-- **Fold-aware layout.** Folding and unfolding are handled, because a fold is a
-  window resize and surviving one is the whole point here. What the package does
-  not do is align the split to the fold — `MediaQuery.displayFeaturesOf` is not
-  read. On a flat foldable that costs nothing: a crease on a continuous display
-  occludes no content. It starts to matter in half-opened postures, where the
-  screen is two planes at an angle and a pane straddling the crease is bent
-  across both.
-- **The pane arithmetic is internal.** An app that decides "wide layout or not"
-  with a formula of its own has to mirror the shell's subtraction by hand; there
-  is no exported helper for it yet.
+A fold is a window resize, so folding and unfolding cost nothing here: the
+screens survive it the same way they survive a rotation. What makes iPhone Duo
+different is where the system puts its own bars. The status bar is a vertical
+strip 84 points wide along one edge, which edge it is changes as the device is
+folded and turned, and Apple asks that an app's bars follow it —
+[Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo).
+The one exception is the inner display in portrait, which has the vertical room
+for ordinary horizontal bars.
+
+The package does that out of the box. It reads the posture straight off
+`MediaQuery.padding` — a substantial inset on exactly **one** side is the system
+bar — so there is nothing to configure and no platform channel. The sizes below
+were measured on the iPhone Duo simulator under Xcode 27.1:
+
+| Posture | Window | Safe area | Chrome | Pane area |
+| --- | --- | --- | --- | --- |
+| outer, portrait | 466 × 678 | right 84 | rail, right, under the camera | 377 |
+| outer, landscape | 678 × 466 | left 84 | rail, left, under the camera | 589 |
+| outer, landscape, turned the other way | 678 × 466 | right 84 | rail, right, camera below it | 589 |
+| inner, portrait | 669 × 951 | top 82 | bar, bottom | 669 |
+| inner, landscape | 951 × 669 | right 84 | rail, left | 786 |
+
+### Outer display: the rail in the camera's column
+
+The rail joins the system's column rather than taking one of its own: the camera
+is at one end of that column and the controls are meant to line up with it. To
+sit *with* the camera and the clock the rail needs numbers no API reports — how
+far along the column the system's glyphs reach, and which vertical line they
+are centred on. They are in `AdaptiveShellConfig.systemBar`, and
+`SystemBarMetrics.measured` holds what the simulator shows: 150 points upright,
+80 in landscape, where the system hides the clock and only the camera is left,
+and an axis 48 points in from the window edge. They were read off screenshots,
+so they are numbers to adjust rather than to trust; `SystemBarMetrics.none`
+ignores the bar entirely.
+
+The camera is in a corner of the glass, so turning the phone moves it along the
+column: at the top upright and with the column on the left, at the bottom with
+the column on the right. The reserve follows it. `SystemBarMetrics.end` takes
+the window and the column's side and returns the end, should other hardware put
+the camera elsewhere.
+
+That column is short — six destinations on the outer display upright, fewer
+turned, against a desktop's dozen — and Material's `NavigationRail` neither scrolls nor wraps:
+past its height it simply overflows. So the shell counts them instead and puts
+the rest behind a menu button at the end of the rail
+(`AdaptiveShellConfig.railOverflow`, on by default). The order never changes
+as you navigate; an active destination among the hidden ones leaves the rail
+unselected and lights the button instead.
+
+The count is arithmetic, not measurement — a `LayoutBuilder` around the rail
+is the one thing `doc/design.md` warns against — so the shell lays the labels
+out with a `TextPainter` to know how tall each destination is. A label too wide
+for the rail takes a second line and that destination grows with it, alone:
+"Home" is 64 points beside "People"'s 80, and the shell adds the heights up one
+by one rather than counting them all at the tallest.
+
+The button itself is `AdaptiveShellConfig.railOverflowBuilder`'s to draw — it
+gets the hidden branch indices, the callback to switch to one, and whether the
+active branch is among them. Which destinations it carries and the 56 points it
+sits in stay with the shell, because the count above depends on both; a button
+that needs more room than that is a `railBuilder` rail.
+
+### Inner display
+
+In landscape there is room for the rail and both panes to keep the arrangement
+they have everywhere else, so the rail leads and the pane against the system
+bar bleeds under it. Nothing is inset at the top there, so the rail keeps
+`cornerClearance` (16 points) free rather than start in the rounded corner.
+
+In portrait the bars are horizontal and the display is 669 points across —
+enough for two panes above a bottom bar, the one layout that exists for this
+device alone. The pane cards run up under the status bar and the top inset is
+reserved once for the whole layout, so its 82 points cost the panes nothing but
+the card's margin.
+
+### What it means for an app
+
+- **Nothing changes on any other device.** All of the above applies only where
+  one side of the window has a vertical bar of 60 points or more and the other
+  does not. A notched iPhone in landscape has large horizontal insets, but
+  symmetric ones; a display cutout or Android's navigation buttons are
+  one-sided but far narrower. `chrome_layout_test.dart` and
+  `duo_poses_test.dart` pin every phone, tablet and desktop case to the layout
+  the package always gave it.
+- **The inner display in portrait needs smaller minimums.** It is the roomiest
+  posture — no rail takes a share, so all 669 points go to the panes — but the
+  defaults ask for 680. Pick `masterMinWidth` and `detailMinWidth` that fit,
+  the way [`example/`](example) does with 300 and 330, or accept a single stack
+  there. Values that fit 669 still leave the outer display a single stack,
+  which is what Apple asks for.
+- **Build against the iOS 27.1 SDK.** Older SDKs put the app in a compatibility
+  box (375 × 667) on both displays, so none of the above applies and nothing
+  can be tested.
+
+What the package does **not** do is place your screens' own toolbar items. The
+guidance there — Back and Close at the top of the vertical axis, prominent
+actions next, the rest in their original groups — is for the `AppBar` inside
+each pane, which is yours.
+
+### Half open
+
+While the device is half open the inner display is two planes at an angle, and
+a pane straddling the crease is bent across both. `MasterDetailConfig.alignToFold`
+(default `true`) puts the boundary on the fold instead of where `paneRatio` or a
+drag would have it, and parts the panes by the width of the crease rather than
+by `PaneDecoration.gap`. The divider stops being draggable while it holds — the
+hinge decided — and the app's own width comes back the moment the device is
+flat again, so the boundary moves once and once back.
+
+The fold is read from `MediaQuery.displayFeatures`, and only a feature that is
+vertical, active and inside the pane area counts. **The framework fills that
+list on Android and not yet on iOS**, so a book-style Android foldable gets
+this today while iPhone Duo does not: nothing maps Apple's `reservedRegions`
+onto `displayFeatures` so far. Nothing here needs to change when it does.
+
+Until it does, an app can say where the crease is itself:
+
+```dart
+AdaptiveShellConfig<AppRoute>(
+  // A centre hinge, which is what iPhone Duo has.
+  foldLocator: FoldMetrics.windowCentre,
+  ...
+)
+```
+
+`foldLocator` is consulted only where `displayFeatures` said nothing, so it
+takes nothing away from a device that reports a real fold — and it is the app
+asserting what the hardware is, not the package detecting it, which is why
+there is no default.
+
+It is also not testable by hand yet — Xcode 27.1's simulator offers open,
+closed and rotate, with no half-opened posture and no hinge angle — so
+`fold_split_test.dart` injects the feature directly.
 
 ## Tests
 

@@ -1,7 +1,10 @@
 // material, not widgets: the config refers to `ScaffoldState`.
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'fold.dart';
 import 'nav_state.dart';
 import 'pane_split.dart';
 
@@ -17,10 +20,96 @@ enum AppTransition { platform, fade, modal, none, adaptive }
 /// Asked before leaving a screen. `false` blocks the exit.
 typedef NavExitGuard = Future<bool> Function();
 
-/// Given the router area's width and safe-area padding, decides between the
-/// rail (`true`) and the bar (`false`). Pane count is decided separately, by
-/// [MasterDetailConfig.fits].
-typedef ChromePredicate = bool Function(double width, EdgeInsets padding);
+/// Where the shell puts its navigation chrome.
+///
+/// [bottom] is a horizontal `NavigationBar`; [left] and [right] are a vertical
+/// `NavigationRail` against that edge of the window.
+///
+/// The sides are physical, not leading and trailing. iPhone Duo aligns its
+/// vertical bar with the hardware — the camera is at one end of it — so it
+/// stays on the same side in right-to-left languages, and a shell that mapped
+/// the side through `Directionality` would disagree with the system bar it is
+/// supposed to sit next to.
+enum ChromePlacement {
+  bottom,
+  left,
+  right;
+
+  bool get isRail => this != ChromePlacement.bottom;
+}
+
+/// Given the window and its safe-area padding, decides where the chrome goes.
+/// Pane count is decided separately, by [MasterDetailConfig.fits].
+typedef ChromeLayout =
+    ChromePlacement Function(Size window, EdgeInsets padding);
+
+/// A one-sided horizontal inset at least this wide is a system bar standing on
+/// its end, not a cutout.
+///
+/// Measured: iPhone Duo reserves 84 for its vertical status bar. A notched
+/// iPhone in landscape reserves 62 — but on *both* sides, which is what
+/// [defaultChromeLayout] actually keys on; this threshold only keeps a
+/// one-sided display cutout, some 30 to 50 logical pixels on Android, from
+/// reading as a bar.
+const double kVerticalBarInset = 60;
+
+/// A top inset at least this deep belongs to a phone-shaped display.
+///
+/// Measured: iPhone 18 Pro reports 62 in portrait and iPhone Duo's inner
+/// display 82, against 24 on an iPad and 0 on a desktop. It is the one signal
+/// that separates the Duo's inner display in portrait — 669 points wide, which
+/// the width rule alone would hand a rail — from a tablet of the same
+/// proportions.
+const double kPhoneStatusBarInset = 50;
+
+/// Rail from 600 logical pixels — the compact/medium boundary of the Material 3
+/// window size classes — with iPhone Duo's postures taken first.
+///
+/// Three rules, in order:
+///
+/// 1. A substantial inset on exactly one side is the system's own vertical
+///    bar. On a display narrow enough to be compact the chrome joins it: that
+///    is iPhone Duo's outer display, where the bar and the camera share one
+///    column and the rail belongs in it.
+/// 2. A phone-shaped status bar means horizontal bars, which is what the Duo's
+///    inner display in portrait asks for.
+/// 3. Otherwise the width breakpoint, as before — and the rail goes to the
+///    leading edge even where a system bar is on the other one. The Duo's
+///    inner display in landscape is wide enough for the rail and the panes to
+///    keep the arrangement they have everywhere else; the pane against the
+///    bar bleeds under it instead.
+///
+/// Rule 1 is fenced off to a display that really does carry a side bar: it
+/// wants a one-sided inset of [kVerticalBarInset] *and* a compact width. iOS
+/// reports the landscape insets symmetrically and a display cutout is
+/// narrower than the threshold, so nothing else reaches it.
+///
+/// Rule 2 is not fenced that way. It reads the top inset alone, so any window
+/// at least [kPhoneStatusBarInset] deep at the top gets horizontal bars,
+/// however wide it is and whatever device it belongs to. Nothing measured
+/// reports that on a window wide enough for a rail — an iPad sends 24, a
+/// desktop 0 — but a device that did would follow the Duo's inner display
+/// rather than the width breakpoint.
+///
+/// `chrome_layout_test.dart` pins both: the devices that must not change, and
+/// what a deep top inset does when it turns up.
+ChromePlacement defaultChromeLayout(Size window, EdgeInsets padding) {
+  final bool wide = (window.width - padding.horizontal) >= 600;
+  final bool barLeft =
+      padding.left >= kVerticalBarInset && padding.right < kVerticalBarInset;
+  final bool barRight =
+      padding.right >= kVerticalBarInset && padding.left < kVerticalBarInset;
+  if (!wide && barLeft) {
+    return ChromePlacement.left;
+  }
+  if (!wide && barRight) {
+    return ChromePlacement.right;
+  }
+  if (padding.top >= kPhoneStatusBarInset) {
+    return ChromePlacement.bottom;
+  }
+  return wide ? ChromePlacement.left : ChromePlacement.bottom;
+}
 
 /// Auth guard: may substitute a state before it is applied. Runs on incoming
 /// URLs and on `AdaptiveRouterDelegate.reevaluate`, not on every stack
@@ -39,6 +128,26 @@ typedef ShellChromeBuilder =
       ValueChanged<int> onSelectBranch,
     );
 
+/// Builds the button at the end of the default rail that carries the
+/// destinations its column could not hold.
+///
+/// [hidden] and [onSelectBranch] are in BRANCH indices, like
+/// [ShellChromeBuilder]'s. [active] says the current branch is one of the
+/// hidden ones: the rail shows nothing selected then, so the button is what
+/// carries the selection.
+///
+/// The widget is centred in a slot [kRailOverflowExtent] tall and laid out
+/// into it. That height is one of the terms in the shell's count of how many
+/// destinations fit, so it is not the builder's to change — a rail whose
+/// overflow button needs more room than that is a [ShellChromeBuilder] rail.
+typedef ShellRailOverflowBuilder =
+    Widget Function(
+      BuildContext context,
+      List<int> hidden,
+      ValueChanged<int> onSelectBranch,
+      bool active,
+    );
+
 /// Builds the shell drawer. [rail] tells which layout is up; `null` also
 /// disables the edge swipe.
 typedef ShellDrawerBuilder = Widget? Function(BuildContext context, bool rail);
@@ -48,15 +157,120 @@ typedef ShellDrawerBuilder = Widget? Function(BuildContext context, bool rail);
 /// full-screen screen inside a normal one.
 typedef ChromeVisibility<R> = bool Function(NavState<R> state);
 
-/// Rail from 600 logical pixels — the compact/medium boundary of the Material 3
-/// window size classes.
-bool defaultShowsRail(double width, EdgeInsets padding) =>
-    (width - padding.horizontal) >= 600;
-
 /// `NavigationRail.minWidth`.
 const double kDefaultRailWidth = 80;
 
 const double kDefaultRailDividerWidth = 1;
+
+/// Everything a `NavigationRail` destination is, apart from its label: icon,
+/// indicator and the padding around them.
+///
+/// The label is the part that varies — "Home" is one line in an 80-point rail
+/// and "People" is two — so the shell lays the text out with a `TextPainter`
+/// and adds it to this. Measured: a one-line destination is 64 and a two-line
+/// one is 80, against a 16-point line.
+///
+/// Computed rather than measured *from the tree*, for the same reason
+/// [kDefaultRailWidth] is declared: the shell decides how many destinations
+/// fit at build time, and a `LayoutBuilder` around the rail is exactly where
+/// `OverlayPortal` tooltips once brought the framework down — see
+/// `doc/design.md`. `rail_overflow_test.dart` pins both numbers.
+const double kRailDestinationBase = 48;
+
+/// Width the label gets inside the rail: [kDefaultRailWidth] less its padding.
+const double kRailLabelInset = 16;
+
+/// Height the overflow button takes at the end of the rail.
+const double kRailOverflowExtent = 56;
+
+/// `NavigationRail`'s own spacer above its destinations.
+const double kRailLeadingSpacer = 8;
+
+/// Which end of its column the system's vertical bar keeps the camera and the
+/// status glyphs at.
+enum SystemBarEnd { top, bottom }
+
+/// Picks the [SystemBarEnd] for a window, given the side the bar is on.
+typedef SystemBarEndResolver =
+    SystemBarEnd Function(Size window, ChromePlacement side);
+
+/// iPhone Duo's outer display: the camera is in one corner of the glass, and
+/// the system turns its column so the column is always on a long side.
+///
+/// Upright, that corner is the top right. Turned one way it ends up top left;
+/// turned the other, bottom right — so the only landscape column with the
+/// camera at its bottom is the one on the right.
+SystemBarEnd defaultSystemBarEnd(Size window, ChromePlacement side) {
+  final bool landscape = window.width > window.height;
+  return landscape && side == ChromePlacement.right
+      ? SystemBarEnd.bottom
+      : SystemBarEnd.top;
+}
+
+/// Where the system's own vertical bar sits inside the column it reserves.
+///
+/// On iPhone Duo's outer display that column holds the camera at one end and
+/// the status bar below it, and the rail joins the same column rather than
+/// taking one of its own — the controls are meant to line up with the camera.
+/// To sit *with* them the rail needs two things the system does not report:
+/// how far down its own elements end, and which vertical line they are centred
+/// on.
+///
+/// The defaults were read off screenshots of the simulator, so they are
+/// numbers to adjust rather than to trust. They are used only where the
+/// window has a vertical system bar on one side, which today means iPhone Duo
+/// and nothing else; everywhere else the rail is flush against the window and
+/// starts at the top.
+@immutable
+class SystemBarMetrics {
+  const SystemBarMetrics({
+    this.reserve = 150,
+    this.landscapeReserve = 80,
+    this.axisFromEdge = 48,
+    this.end = defaultSystemBarEnd,
+    this.cornerClearance = 16,
+  });
+
+  /// What was measured: the status glyphs end about 150 points down, and the
+  /// symmetric ones are centred 48 points in from the window edge — not on
+  /// the middle of the 84-point column, which would be 42. In landscape the
+  /// outer display hides the clock and only the camera is left, which ends
+  /// about 65 points in.
+  static const SystemBarMetrics measured = SystemBarMetrics();
+
+  /// Treat the column as ordinary space: flush against the edge, no reserve.
+  static const SystemBarMetrics none = SystemBarMetrics(
+    reserve: 0,
+    landscapeReserve: 0,
+    axisFromEdge: kDefaultRailWidth / 2,
+    cornerClearance: 0,
+  );
+
+  /// Kept free at the camera's end of the column, measured from the window
+  /// edge. At the bottom the home indicator's inset is part of it, not added
+  /// to it.
+  final double reserve;
+
+  /// [reserve] for a landscape window, where the system shows no clock.
+  final double landscapeReserve;
+
+  /// Kept free at the top of a rail that does *not* share the system's column
+  /// — the bar is on the far edge — when nothing else is at the top. That is
+  /// iPhone Duo's inner display in landscape: no inset at the top, so without
+  /// it the first destination sits in the rounded corner.
+  final double cornerClearance;
+
+  /// Which end [reserve] is kept at.
+  final SystemBarEndResolver end;
+
+  /// The line the system centres its glyphs on, measured in from the window
+  /// edge. The rail is centred on the same line.
+  final double axisFromEdge;
+
+  /// How far the rail is held off the window edge to land on that line.
+  double edgeGap(double railWidth) =>
+      math.max(0.0, axisFromEdge - railWidth / 2);
+}
 
 /// Matches the detail pane reveal, so the shell's movements read as one.
 const Duration kDefaultImmersiveDuration = Duration(milliseconds: 240);
@@ -92,6 +306,7 @@ class RailDecoration {
     this.dividerWidth = kDefaultRailDividerWidth,
     this.shadow,
     this.border,
+    this.backgroundColor,
   });
 
   /// A full-height strip with a divider after it.
@@ -115,6 +330,17 @@ class RailDecoration {
   /// What actually holds the capsule's shape in a dark theme, where a shadow is
   /// dark on dark. Painted inside the card's bounds and adds no size.
   final ShellCardBorder? border;
+
+  /// Fills the whole rail column, including the part
+  /// [AdaptiveShellConfig.systemBarReserve] keeps free at the top.
+  ///
+  /// `NavigationRail` paints only as far as it is laid out, so without this the
+  /// reserve would show the canvas through and the column would read as two
+  /// pieces rather than one. `null` resolves the way `NavigationRail` resolves
+  /// its own background — the theme first, then `ColorScheme.surface` — which
+  /// is seamless for the default rail; a [AdaptiveShellConfig.railBuilder] that
+  /// paints something else should say so here.
+  final PaneCanvasColor? backgroundColor;
 
   /// Total horizontal space a decorated rail occupies.
   double regionWidth(double railWidth) =>
@@ -181,6 +407,7 @@ class MasterDetailConfig {
     this.masterMinWidth = 320,
     this.detailMinWidth = 360,
     this.collapseWhenDetailEmpty = true,
+    this.alignToFold = true,
   });
 
   /// Share of the available width given to the master pane.
@@ -197,6 +424,19 @@ class MasterDetailConfig {
   /// Only widths change either way — both navigators stay mounted, so screen
   /// state survives the collapse and the expansion.
   final bool collapseWhenDetailEmpty;
+
+  /// While the device is half open, put the boundary on the fold instead of
+  /// where [paneRatio] or the user's drag would have it.
+  ///
+  /// A pane straddling a crease is bent across two planes at an angle, which
+  /// is the one posture where the split's position is not a preference. The
+  /// fold only wins while it is reported active *and* both panes still clear
+  /// their minimums around it; flat, or too far to one side, and the ordinary
+  /// width applies again — so the boundary moves once, on the fold, and back.
+  ///
+  /// Requires `MediaQuery.displayFeatures`, which the framework fills on
+  /// Android and not yet on iOS; see `FoldMetrics`.
+  final bool alignToFold;
 
   /// Whether [available] — the pane width, decoration margins already removed —
   /// fits two unsqueezed panes plus the [gap]. If not, the branch renders as a
@@ -232,6 +472,11 @@ class MasterDetailConfig {
     }
     return width.clamp(masterMinWidth, maxMaster).toDouble();
   }
+
+  /// Whether [fold] leaves both panes their minimums, so the boundary can go
+  /// on it rather than where the width would put it.
+  bool fitsAround(PaneFold fold, double available) =>
+      fold.start >= masterMinWidth && available - fold.end >= detailMinWidth;
 
   /// Whether there is room to move the divider. At exactly the threshold width
   /// both panes are already at their minimums, and a handle would be a lie.
@@ -269,6 +514,10 @@ class BranchConfig<R> {
   final AppTransition transition;
 
   /// Shown in an empty detail pane, when the split is not collapsed.
+  ///
+  /// `null` leaves the pane blank. The package does not put a caption there:
+  /// it knows nothing about the app's screens and could not localise one
+  /// anyway, so "Select a person" and the like belong here.
   final WidgetBuilder? detailPlaceholder;
 
   /// `false` keeps the branch alive — stack, state, mounted navigator — but
@@ -297,8 +546,13 @@ abstract class RouteCodec<R> {
 class AdaptiveShellConfig<R> {
   const AdaptiveShellConfig({
     required this.branches,
-    this.showsRail = defaultShowsRail,
+    this.chromeLayout = defaultChromeLayout,
+    this.foldLocator,
     this.railWidth = kDefaultRailWidth,
+    this.railDestinationExtent,
+    this.railOverflow = true,
+    this.railOverflowBuilder,
+    this.systemBar = SystemBarMetrics.measured,
     this.rail = RailDecoration.none,
     this.panes = PaneDecoration.none,
     this.paneSplit,
@@ -315,7 +569,20 @@ class AdaptiveShellConfig<R> {
   });
 
   final List<BranchConfig<R>> branches;
-  final ChromePredicate showsRail;
+
+  /// Where the bar or the rail goes. See [defaultChromeLayout]; replace it to
+  /// take the decision over entirely.
+  final ChromeLayout chromeLayout;
+
+  /// Where the crease is, for a device whose platform does not say.
+  ///
+  /// `MediaQuery.displayFeatures` is consulted first and this only fills the
+  /// silence, so an app can pass [FoldMetrics.windowCentre] on iOS today and
+  /// take nothing away from an Android foldable that reports a real fold.
+  /// `null` — no fold unless the platform reports one.
+  ///
+  /// Only consulted where [MasterDetailConfig.alignToFold] is on.
+  final FoldLocator? foldLocator;
 
   /// How much the wide layout gives up on the left before the panes get their
   /// share. Declared rather than measured, because the layout is decided at
@@ -325,6 +592,39 @@ class AdaptiveShellConfig<R> {
   /// [railBuilder]. If they disagree, the detail pane width is off by the
   /// difference.
   final double railWidth;
+
+  /// Height of a destination in the default rail, used to decide how many of
+  /// them fit. It applies to every destination alike; `null` lays each label
+  /// out and works each one out on its own — see [kRailDestinationBase].
+  final double? railDestinationExtent;
+
+  /// When the default rail has more destinations than its column can hold, put
+  /// the ones that do not fit behind a menu button at its end.
+  ///
+  /// `false` lets them overflow instead, which is what Material does on its
+  /// own. Nothing here applies to a [railBuilder] rail: that one is the app's
+  /// to fit.
+  ///
+  /// It matters on a folded iPhone Duo, where the column is short and shares
+  /// its top with the system bar: about seven destinations fit there against a
+  /// desktop's dozen.
+  final bool railOverflow;
+
+  /// Builds that menu button in place of the Material one — `null` is an
+  /// `IconButton` opening a `MenuAnchor`, filled tonal while the active branch
+  /// is one of the hidden ones.
+  ///
+  /// The button and its menu only. Where it sits, how tall it is and which
+  /// destinations it carries stay with the shell, because [railOverflow]'s
+  /// count depends on all three. Nothing here applies to a [railBuilder] rail
+  /// either, for the same reason [railOverflow] does not: that one is the
+  /// app's to fit, overflow included.
+  final ShellRailOverflowBuilder? railOverflowBuilder;
+
+  /// How the rail lines itself up with a system vertical bar it shares a
+  /// column with — iPhone Duo's outer display, and nowhere else. See
+  /// [SystemBarMetrics]; [SystemBarMetrics.none] ignores the bar entirely.
+  final SystemBarMetrics systemBar;
 
   /// [railWidth] is the width of the rail itself, without the margin: the app
   /// lays its destinations into that, and the package adds the card margin

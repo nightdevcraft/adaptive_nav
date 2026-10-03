@@ -7,6 +7,12 @@ import '_harness/resize.dart';
 /// `collapseWhenDetailEmpty`: the list spans the full width until something
 /// is selected, and the split arrives with the detail.
 void main() {
+  // The caption is the app's, not the package's: an empty pane is blank
+  // unless a `detailPlaceholder` fills it.
+  const String placeholderText = 'Select a person';
+  Widget placeholder(BuildContext context) =>
+      const Scaffold(body: Center(child: Text(placeholderText)));
+
   /// Width of the content area (after the rail and its divider) — the
   /// reference for "full width", compared against the master width.
   double contentWidth(WidgetTester tester) {
@@ -20,11 +26,11 @@ void main() {
     addTearDown(tester.view.reset);
     setWindow(tester, kWide);
 
-    final DemoHarness h = DemoHarness();
+    final DemoHarness h = DemoHarness(detailPlaceholder: placeholder);
     await tester.pumpWidget(h.app());
     await tester.pumpAndSettle();
 
-    expect(find.text('Select an item'), findsNothing);
+    expect(find.text(placeholderText), findsNothing);
     expect(
       tester.getSize(find.byType(DemoListScreen)).width,
       closeTo(contentWidth(tester), 0.5),
@@ -91,11 +97,14 @@ void main() {
       addTearDown(tester.view.reset);
       setWindow(tester, kWide);
 
-      final DemoHarness h = DemoHarness(collapseWhenDetailEmpty: false);
+      final DemoHarness h = DemoHarness(
+        collapseWhenDetailEmpty: false,
+        detailPlaceholder: placeholder,
+      );
       await tester.pumpWidget(h.app());
       await tester.pumpAndSettle();
 
-      expect(find.text('Select an item'), findsOneWidget);
+      expect(find.text(placeholderText), findsOneWidget);
       expect(
         tester.getSize(find.byType(DemoListScreen)).width,
         lessThan(contentWidth(tester)),

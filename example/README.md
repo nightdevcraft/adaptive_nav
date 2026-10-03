@@ -5,12 +5,22 @@ nothing remounts.
 
 ## What it shows
 
-- **People** is a master-detail branch. Below ~680 logical pixels of pane area
+- **People** is a master-detail branch. Below ~638 logical pixels of pane area
   it is a plain stack; above it the list and the person sit side by side, and
   the boundary between them can be dragged (`PaneSplitController`, with
-  `onCommit` firing on release).
+  `onCommit` firing on release). The minimums behind that number are picked so
+  the inner display of an iPhone Duo in portrait still splits; the package's
+  own defaults are wider.
 - **Settings** is a plain tab with a switch. Leave the tab and come back — the
   switch is where you left it, because the branch navigator stays mounted.
+- **Teams**, **Starred**, **Recent calls**, **Archive**, **Reports** and
+  **Trash** are stubs, there to give the chrome more sections than a short rail
+  can hold. Fold an iPhone Duo and the ones that do not fit move behind the
+  menu button at the end of the rail; widen the window and they all come back.
+  Each keeps a tap count, so a trip through the menu and back shows that
+  switching sections does not rebuild them.
+  "Recent calls" is the label that takes two lines in an 80-point rail, and
+  every destination is counted at that height.
 - Picking another person uses `resetDetailTo`, not `push`: a lateral move that
   replaces a detail of any depth without flashing an empty pane.
 - The editor declares an `onExit` guard. Back, a tab switch or picking another
@@ -46,3 +56,25 @@ cd example
 flutter create .
 flutter run
 ```
+
+### iOS 27.1 and iPhone Duo
+
+`flutter create` still writes `IPHONEOS_DEPLOYMENT_TARGET = 13.0`, and an iOS
+27.1 runtime refuses to build below 15.0:
+
+```
+The iOS Simulator deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to
+13.0, but the range of supported deployment target versions is 15.0 to 27.1.x.
+```
+
+Raise it after generating the project:
+
+```sh
+sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' \
+  ios/Runner.xcodeproj/project.pbxproj
+```
+
+Build with the iOS 27.1 SDK (Xcode 27.1) to see the real thing on an iPhone
+Duo. Under an older SDK both displays hand the app a 375 × 667 compatibility
+box, and none of the postures in the main README apply. The simulator's fold
+and rotate controls live in `DeviceHub.app`, which replaced `Simulator.app`.

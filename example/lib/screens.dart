@@ -238,3 +238,48 @@ Future<bool> confirmDiscard(BuildContext context) async {
   );
   return leave ?? false;
 }
+
+/// A section with nothing in it, so there is something to switch to.
+///
+/// It keeps a count to show what a branch switch does *not* do: leave the
+/// section and come back, and the number is where you left it, because the
+/// branch's navigator was never unmounted.
+class PlaceholderTabScreen extends StatefulWidget {
+  const PlaceholderTabScreen({
+    required this.icon,
+    required this.label,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  State<PlaceholderTabScreen> createState() => _PlaceholderTabScreenState();
+}
+
+class _PlaceholderTabScreenState extends State<PlaceholderTabScreen> {
+  int _taps = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.label)),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(widget.icon, size: 48),
+            const SizedBox(height: 16),
+            Text('Tapped $_taps times'),
+            const SizedBox(height: 8),
+            FilledButton.tonal(
+              onPressed: () => setState(() => _taps++),
+              child: const Text('Tap'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

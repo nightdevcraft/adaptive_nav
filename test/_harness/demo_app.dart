@@ -323,11 +323,24 @@ class DemoHarness {
     ChromeVisibility<DemoRoute>? showsChrome,
     RedirectHook<DemoRoute>? redirect,
     bool withHiddenBranch = false,
+    int extraBranches = 0,
+    // `Extra $i` wraps to two lines in an 80-point rail, so every extra branch
+    // is a tall destination unless a test says otherwise.
+    String Function(int i)? extraLabel,
+    TextStyle? railLabelStyle,
+    bool railOverflow = true,
+    ShellRailOverflowBuilder? railOverflowBuilder,
     ShellChromeBuilder? barBuilder,
     ShellChromeBuilder? railBuilder,
     ShellDrawerBuilder? drawerBuilder,
     GlobalKey<ScaffoldState>? scaffoldKey,
     bool collapseWhenDetailEmpty = true,
+    WidgetBuilder? detailPlaceholder,
+    bool alignToFold = true,
+    FoldLocator? foldLocator,
+    SystemBarMetrics systemBar = SystemBarMetrics.measured,
+    double masterMinWidth = 320,
+    double detailMinWidth = 360,
     bool extendBodyBehindBar = false,
     Duration branchFadeDuration = Duration.zero,
     PaneDecoration panes = PaneDecoration.none,
@@ -339,11 +352,14 @@ class DemoHarness {
     NavEntry<DemoRoute> root(DemoRoute route) =>
         NavEntry<DemoRoute>(route: route, transition: AppTransition.platform);
 
+    _railLabelStyle = railLabelStyle;
     baseState = NavState<DemoRoute>(
       activeBranch: 0,
       branches: <BranchStack<DemoRoute>>[
         BranchStack<DemoRoute>(<NavEntry<DemoRoute>>[root(const DemoList())]),
         BranchStack<DemoRoute>(<NavEntry<DemoRoute>>[root(const DemoHome())]),
+        for (int i = 0; i < extraBranches; i++)
+          BranchStack<DemoRoute>(<NavEntry<DemoRoute>>[root(const DemoHome())]),
         if (withHiddenBranch)
           BranchStack<DemoRoute>(<NavEntry<DemoRoute>>[
             root(const DemoProfile()),
@@ -353,14 +369,22 @@ class DemoHarness {
 
     delegate = AdaptiveRouterDelegate<DemoRoute>(
       shellConfig: AdaptiveShellConfig<DemoRoute>(
+        railOverflow: railOverflow,
+        railOverflowBuilder: railOverflowBuilder,
+        systemBar: systemBar,
+        foldLocator: foldLocator,
         branches: <BranchConfig<DemoRoute>>[
           BranchConfig<DemoRoute>(
             id: 'staff',
             icon: Icons.people,
             label: 'People',
+            detailPlaceholder: detailPlaceholder,
             masterDetail: MasterDetailConfig(
               paneRatio: 0.35,
+              masterMinWidth: masterMinWidth,
+              detailMinWidth: detailMinWidth,
               collapseWhenDetailEmpty: collapseWhenDetailEmpty,
+              alignToFold: alignToFold,
             ),
             pageBuilder: _buildPage,
           ),
@@ -370,6 +394,13 @@ class DemoHarness {
             label: 'Home',
             pageBuilder: _buildPage,
           ),
+          for (int i = 0; i < extraBranches; i++)
+            BranchConfig<DemoRoute>(
+              id: 'extra-$i',
+              icon: Icons.star,
+              label: extraLabel?.call(i) ?? 'Extra $i',
+              pageBuilder: _buildPage,
+            ),
           if (withHiddenBranch)
             BranchConfig<DemoRoute>(
               id: 'profile',
@@ -404,6 +435,7 @@ class DemoHarness {
 
   late final NavState<DemoRoute> baseState;
   late final AdaptiveRouterDelegate<DemoRoute> delegate;
+  TextStyle? _railLabelStyle;
   late final AdaptiveRouteInformationParser<DemoRoute> parser;
 
   Widget _buildPage(DemoRoute route) => switch (route) {
@@ -418,6 +450,14 @@ class DemoHarness {
     delegate: delegate,
     child: MaterialApp.router(
       debugShowCheckedModeBanner: false,
+      theme: _railLabelStyle == null
+          ? null
+          : ThemeData(
+              navigationRailTheme: NavigationRailThemeData(
+                unselectedLabelTextStyle: _railLabelStyle,
+                selectedLabelTextStyle: _railLabelStyle,
+              ),
+            ),
       routerDelegate: delegate,
     ),
   );

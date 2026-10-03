@@ -9,7 +9,7 @@ doc/api/
 # A library, not an application: the lock file is not pinned.
 pubspec.lock
 
-# IDE
+# IDE and local tooling
 .idea/
 .vscode/
 *.iml
