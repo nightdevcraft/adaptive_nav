@@ -111,7 +111,7 @@ That branch splits the top inset instead of reserving it whole. The question is
 who is at the window's top edge: with one pane the screen is, and its `AppBar`
 reserves the inset itself; with two panes a *card* is, and neither end of the
 inset belongs entirely to the shell or entirely to the screen. Reserving it in
-the shell — as the rail layout does — leaves the card starting below the inset
+the shell (as the rail layout did before 0.11) leaves the card starting below the inset
 *and* below its own margin, which on the display this branch exists for is 94
 points of bare canvas under the clock. Leaving it to the screens has each
 `AppBar` reserve it inside the card, below the margin, and sit that much too
@@ -123,6 +123,15 @@ horizontal inset: the margin is held back from the window's top edge, and
 reserves it. The title lands on the same line either way; what changes is that
 the strip under the clock is the card's own background and the card is 70
 points taller.
+
+In 0.11 the rail layout switched to the same scheme. With the inset reserved
+once for the whole layout, an Android tablet or a phone in landscape showed a
+single colour under the clock across the rail and both panes, which looked
+wrong when those three had different colours. Now the rail and the panes extend
+under the status bar. The rail reserves the inset inside its own surface and
+removes it from `NavigationRail`'s `SafeArea`; the panes pass
+`padding.top − margin.top` to their screens. The status bar icons have one
+style for the whole bar, so the three colours need to be all light or all dark.
 
 ## The chrome follows the system's own bars
 
@@ -430,9 +439,9 @@ one letter of the label per line. A custom rail from `railBuilder` gets the same
 treatment, so the declared `railWidth` stays the width the rail can actually
 lay out into.
 
-**The top inset is handled once.** On compact the screen's `AppBar` reserves
-it. Under the rail the shell does, for the whole layout: the screen lives
-inside a pane whose top edge is the window edge, so without a reserve a
-floating card slides under the status bar. Under a bar with two panes the two
-share it, and the card does slide under the status bar on purpose — see the
-bar-with-two-panes branch above.
+**The top inset.** On compact the screen's `AppBar` reserves it. In the wide
+layouts the rail and the panes extend under the status bar, inset only by their
+margins. The rail reserves the rest inside its surface; each pane passes it to
+the screen, where the `AppBar` reserves it (see the bar-with-two-panes branch
+above). A screen without an `AppBar` has to handle `MediaQuery.padding.top`
+itself, as it would on a phone.

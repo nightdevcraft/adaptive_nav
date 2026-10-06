@@ -54,6 +54,11 @@ class PeopleListScreen extends StatelessWidget {
   }
 }
 
+/// Background of the detail screens. One step darker than the master, so two
+/// flush panes are told apart without a divider. Used on a phone as well.
+Color detailShade(BuildContext context) =>
+    Theme.of(context).colorScheme.surfaceContainerLow;
+
 /// The first detail. In the wide layout it fills the right pane, and
 /// [DetailEntryScope.isDetailRoot] is what tells it to offer a close button
 /// instead of a back arrow.
@@ -74,8 +79,11 @@ class PersonDetailScreen extends StatelessWidget {
       listenable: scope.store,
       builder: (BuildContext context, Widget? _) {
         final Person person = scope.store.byId(id);
+        final Color shade = detailShade(context);
         return Scaffold(
+          backgroundColor: shade,
           appBar: AppBar(
+            backgroundColor: shade,
             title: Text(person.name),
             leading: IconButton(
               icon: Icon(isRoot ? Icons.close : Icons.arrow_back),
@@ -165,8 +173,11 @@ class _PersonEditScreenState extends State<PersonEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final Color shade = detailShade(context);
     return Scaffold(
+      backgroundColor: shade,
       appBar: AppBar(
+        backgroundColor: shade,
         title: Text(
           'Editing ${AppScope.of(context).store.byId(widget.id).name}',
         ),

@@ -5,9 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import '_harness/demo_app.dart';
 import '_harness/resize.dart';
 
-/// The top system inset in the wide layout, where a pane starts at the window
-/// edge and no `AppBar` reserves it. The shell does it once for the whole
-/// layout and removes it for the subtree.
+/// The top system inset in the wide layout. The rail and the panes run up
+/// under the status bar, as the cards do above a bottom bar: only their
+/// margins are held back from the window's top edge, so the strip under the
+/// clock takes the colour of whatever is below it. The rail reserves the rest
+/// of the inset inside its own surface; each pane hands it to its screen,
+/// where the `AppBar` reserves it.
 void main() {
   const double statusBar = 40;
   const double gutter = 8;
@@ -54,27 +57,52 @@ void main() {
   EdgeInsets paddingAt(WidgetTester tester, Finder finder) =>
       MediaQuery.of(tester.element(finder)).padding;
 
-  testWidgets('wide: the rail and the panes start BELOW the status bar', (
+  testWidgets('wide: the rail and the panes run up UNDER the status bar', (
     WidgetTester tester,
   ) async {
     await pump(tester, size: window, top: statusBar);
 
-    final Rect railRect = tester.getRect(find.byType(NavigationRail));
     final Rect master = tester.getRect(find.byType(DemoListScreen));
     final Rect detail = tester.getRect(find.byType(DemoDetailScreen));
 
-    // The inset plus the card's own margin: under the clock there is neither
-    // rail nor pane, only the canvas.
-    expect(railRect.top, statusBar + gutter);
-    expect(master.top, statusBar + gutter);
-    expect(detail.top, statusBar + gutter);
-    // The inset does not move the bottom of the layout: the reserve is at the
-    // top only.
+    // Only the card's own margin is held back from the window's top edge.
+    expect(master.top, gutter);
+    expect(detail.top, gutter);
+    // The rail's destinations still start below the clock: the rest of the
+    // inset is reserved inside the rail's card.
+    expect(tester.getRect(find.byType(NavigationRail)).top, statusBar);
+    // The inset does not move the bottom of the layout.
     expect(master.bottom, window.height - gutter);
-    expect(railRect.bottom, window.height - gutter);
+    expect(
+      tester.getRect(find.byType(NavigationRail)).bottom,
+      window.height - gutter,
+    );
   });
 
-  testWidgets('wide: the canvas reaches the very edge', (
+  testWidgets('wide: the strip under the clock is the rail\'s own colour', (
+    WidgetTester tester,
+  ) async {
+    await pump(tester, size: window, top: statusBar);
+
+    // Resolved the way `NavigationRail` resolves its own background.
+    final BuildContext railContext = tester.element(
+      find.byType(NavigationRail),
+    );
+    final Color railColor =
+        NavigationRailTheme.of(railContext).backgroundColor ??
+        Theme.of(railContext).colorScheme.surface;
+    final Finder surface = find.ancestor(
+      of: find.byType(NavigationRail),
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is ColoredBox && w.color == railColor,
+      ),
+    );
+    expect(surface, findsOneWidget);
+    // From the card's top margin down, the reserve included.
+    expect(tester.getRect(surface).top, gutter);
+  });
+
+  testWidgets('wide: the canvas still reaches the very edge', (
     WidgetTester tester,
   ) async {
     await pump(tester, size: window, top: statusBar);
@@ -83,21 +111,56 @@ void main() {
       (Widget w) => w is ColoredBox && w.color == canvas,
     );
     expect(canvasBox, findsOneWidget);
-    // The status bar strip is painted with the canvas, not with a white pane
-    // card.
+    // Behind everything; it shows only in the margins.
     expect(tester.getRect(canvasBox), Offset.zero & window);
   });
 
-  testWidgets('wide: the panes and rail subtree does NOT see the top inset', (
+  testWidgets('wide: the panes see what their margin leaves of the inset', (
     WidgetTester tester,
   ) async {
     await pump(tester, size: window, top: statusBar);
 
-    // Otherwise the `AppBar`/`SafeArea` of a screen inside a pane would inset
-    // for the status bar a SECOND time — the canvas is already under it.
-    expect(paddingAt(tester, find.byType(DemoListScreen)).top, 0);
-    expect(paddingAt(tester, find.byType(DemoDetailScreen)).top, 0);
+    // The screen's `AppBar` reserves it, so its title lands below the clock.
+    expect(
+      paddingAt(tester, find.byType(DemoListScreen)).top,
+      statusBar - gutter,
+    );
+    expect(
+      paddingAt(tester, find.byType(DemoDetailScreen)).top,
+      statusBar - gutter,
+    );
+    expect(
+      tester.getRect(find.byType(AppBar).first).top + (statusBar - gutter),
+      statusBar,
+    );
+  });
+
+  testWidgets('wide: the rail does NOT see the top inset', (
+    WidgetTester tester,
+  ) async {
+    await pump(tester, size: window, top: statusBar);
+
+    // Its surface already reserved it; left in, the `SafeArea` inside
+    // `NavigationRail` would take it a second time.
     expect(paddingAt(tester, find.byType(NavigationRail)).top, 0);
+  });
+
+  testWidgets('flush panes: each pane runs to the window edge', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    setWindow(tester, window);
+    setTopInset(tester, statusBar);
+    final DemoHarness h = DemoHarness();
+    await tester.pumpWidget(h.app());
+    await tester.pumpAndSettle();
+    h.delegate.push(const DemoDetail(1));
+    await tester.pumpAndSettle();
+
+    expect(tester.getRect(find.byType(DemoListScreen)).top, 0);
+    expect(tester.getRect(find.byType(DemoDetailScreen)).top, 0);
+    expect(paddingAt(tester, find.byType(DemoListScreen)).top, statusBar);
+    expect(tester.getRect(find.byType(NavigationRail)).top, statusBar);
   });
 
   // A macOS-shaped window: there is no status bar (`padding.top == 0`), so

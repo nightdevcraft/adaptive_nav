@@ -110,6 +110,31 @@ void main() {
       expect(split(tester), isFalse);
     });
 
+    testWidgets('outer portrait: a flush rail fills its column to the edge', (
+      WidgetTester tester,
+    ) async {
+      await pump(tester, kDuoOuterPortrait, kDuoOuterPortraitPadding);
+
+      final Rect rail = tester.getRect(find.byType(NavigationRail));
+      final BuildContext railContext = tester.element(
+        find.byType(NavigationRail),
+      );
+      final Color railColor =
+          NavigationRailTheme.of(railContext).backgroundColor ??
+          Theme.of(railContext).colorScheme.surface;
+      // The gap that centres the rail on the system's axis is the rail's
+      // colour, not a strip of background against the window edge.
+      final Iterable<Rect> gaps = tester
+          .widgetList<ColoredBox>(find.byType(ColoredBox))
+          .where((ColoredBox b) => b.color == railColor)
+          .map((ColoredBox b) => tester.getRect(find.byWidget(b)))
+          .where((Rect r) => r.left == rail.right);
+      expect(gaps, hasLength(1));
+      expect(gaps.single.right, kDuoOuterPortrait.width);
+      expect(gaps.single.top, 0);
+      expect(gaps.single.bottom, kDuoOuterPortrait.height);
+    });
+
     testWidgets('outer landscape: the column moves with the bar', (
       WidgetTester tester,
     ) async {

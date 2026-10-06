@@ -1,0 +1,51 @@
+name: Playground
+
+# Builds the example's web playground and publishes it to GitHub Pages.
+# In the repository settings, Pages > Source must be "GitHub Actions".
+# A custom domain set there works without changes here: the base path comes
+# from configure-pages.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: pages
+        uses: actions/configure-pages@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      # The example has no platform folders in git; this generates web/.
+      - run: flutter create --platforms=web --project-name adaptive_nav_example .
+        working-directory: example
+      - run: >-
+          flutter build web --release
+          --target lib/playground.dart
+          --base-href "${{ steps.pages.outputs.base_path }}/"
+        working-directory: example
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: example/build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

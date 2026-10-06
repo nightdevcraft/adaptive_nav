@@ -350,11 +350,11 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// navigators by `GlobalKey` from inside the layout callback — which dropped
   /// the frame as soon as a deferred overlay child reactivated.
   ///
-  /// The top inset is reserved once for the whole layout: on wide there is
-  /// nobody else to do it, since `AppBar` lives inside a pane and a pane starts
-  /// at the window edge. The horizontal insets are a different matter — they
-  /// come off the pane area, because a pane only bleeds under them; see
-  /// [PaneUnderlap].
+  /// The rail and the panes extend under the status bar. The rail reserves
+  /// the top inset inside its own surface; each pane passes what is left after
+  /// its margin to the screen, where the `AppBar` reserves it. The horizontal
+  /// insets come off the pane area instead, because a pane only bleeds under
+  /// them; see [PaneUnderlap].
   Widget _buildRail(
     BuildContext context, {
     required double window,
@@ -428,36 +428,35 @@ class AdaptiveShell<R> extends StatelessWidget {
       body: _onCanvas(
         context,
         panes: panes,
-        // The canvas reaches the window edge and the inset sits inside it, so
-        // the strip under the status bar stays background while the rail and
-        // the panes start below it.
-        child: Padding(
-          padding: EdgeInsets.only(top: padding.top),
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            // The row is built below the removed inset, and its own
-            // `removePadding` takes its context from there. With the shell's
-            // context, which is above the `Scaffold`, it would hand the inset
-            // straight back.
-            child: Builder(
-              builder: (BuildContext inner) => _immersiveRow(
-                inner,
-                railWidget: railWidget,
-                rail: rail,
-                panes: panes,
-                md: md,
-                window: window,
-                railRegion: railRegion,
-                paneArea: paneArea,
-                underlap: underlap,
-                placement: placement,
-                systemBar: systemBar,
-                edgeGap: edgeGap,
-                reserve: railWidget == null ? 0 : reserveIfShown,
-                reserveEnd: reserveEnd,
-                foldHint: foldHint,
-              ),
+        // Same as the two-pane bar layout: only the margins are kept clear of
+        // the top edge, so the status bar shows the rail's colour over the
+        // rail and each pane's colour over that pane.
+        child: _paneInsets(
+          context,
+          top: math.max(0.0, padding.top - panes.margin.top),
+          // Built below the adjusted inset, so the row's own `removePadding`
+          // starts from it. The shell's context is above the `Scaffold` and
+          // still has the full inset.
+          child: Builder(
+            builder: (BuildContext inner) => _immersiveRow(
+              inner,
+              railWidget: railWidget,
+              rail: rail,
+              panes: panes,
+              md: md,
+              window: window,
+              railRegion: railRegion,
+              paneArea: paneArea,
+              underlap: underlap,
+              placement: placement,
+              systemBar: systemBar,
+              edgeGap: edgeGap,
+              reserve: railWidget == null ? 0 : reserveIfShown,
+              reserveEnd: reserveEnd,
+              railTop: railWidget == null
+                  ? 0
+                  : math.max(0.0, padding.top - rail.margin.top),
+              foldHint: foldHint,
             ),
           ),
         ),
@@ -482,6 +481,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required double edgeGap,
     required double reserve,
     required SystemBarEnd reserveEnd,
+    required double railTop,
     required Rect? foldHint,
   }) {
     final ValueListenable<bool>? immersive = shellConfig.immersive;
@@ -501,6 +501,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         edgeGap: edgeGap,
         reserve: reserve,
         reserveEnd: reserveEnd,
+        railTop: railTop,
         foldHint: foldHint,
         progress: 1,
         immersive: false,
@@ -532,6 +533,7 @@ class AdaptiveShell<R> extends StatelessWidget {
                   edgeGap: edgeGap,
                   reserve: reserve,
                   reserveEnd: reserveEnd,
+                  railTop: railTop,
                   foldHint: foldHint,
                   progress: progress,
                   immersive: true,
@@ -540,8 +542,8 @@ class AdaptiveShell<R> extends StatelessWidget {
     );
   }
 
-  /// The wide layout's row. [context] must sit below a `MediaQuery` with the
-  /// top inset removed.
+  /// The wide layout's row. The top inset in [context] is what the panes still
+  /// have to clear; the rail clears [railTop] itself.
   ///
   /// [paneArea] is frozen, computed with the rail counted as shown, and it
   /// alone decides the layout class. [progress] only affects geometry. The
@@ -563,6 +565,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required double edgeGap,
     required double reserve,
     required SystemBarEnd reserveEnd,
+    required double railTop,
     required Rect? foldHint,
     required double progress,
     required bool immersive,
@@ -593,6 +596,18 @@ class AdaptiveShell<R> extends StatelessWidget {
       0.0,
       railRegion - rail.regionWidth(shellConfig.railWidth) - edgeGap,
     );
+    // [edgeGap] sits between the rail and the window edge. A flush rail
+    // paints it in its own colour, otherwise it shows up as a strip of
+    // background. The slack is on the panes' side of the divider and is left
+    // alone.
+    final Color? columnColor = rail.isFlush ? _railColor(context, rail) : null;
+    Widget spacer(double width) {
+      final Widget box = SizedBox(width: width, height: double.infinity);
+      return columnColor == null
+          ? box
+          : ColoredBox(color: columnColor, child: box);
+    }
+
     final List<Widget> railRegionWidgets = <Widget>[
       if (railWidget != null && immersive)
         _railRegion(
@@ -604,9 +619,10 @@ class AdaptiveShell<R> extends StatelessWidget {
           onLeft: onLeft,
           reserve: reserve,
           reserveEnd: reserveEnd,
+          top: railTop,
         )
       else if (railWidget != null) ...<Widget>[
-        if (onLeft && edgeGap > 0) SizedBox(width: edgeGap),
+        if (onLeft && edgeGap > 0) spacer(edgeGap),
         if (!onLeft && slack > 0) SizedBox(width: slack),
         if (!onLeft && rail.dividerWidth > 0)
           VerticalDivider(width: rail.dividerWidth),
@@ -617,11 +633,12 @@ class AdaptiveShell<R> extends StatelessWidget {
           onLeft: onLeft,
           reserve: reserve,
           reserveEnd: reserveEnd,
+          top: railTop,
         ),
         if (onLeft && rail.dividerWidth > 0)
           VerticalDivider(width: rail.dividerWidth),
         if (onLeft && slack > 0) SizedBox(width: slack),
-        if (!onLeft && edgeGap > 0) SizedBox(width: edgeGap),
+        if (!onLeft && edgeGap > 0) spacer(edgeGap),
       ],
     ];
     final Widget content = Expanded(
@@ -649,37 +666,43 @@ class AdaptiveShell<R> extends StatelessWidget {
     );
   }
 
-  /// The column is painted as one piece, reserve included.
+  /// The column is painted as one piece, including the reserve and the strip
+  /// under the status bar.
   ///
   /// `NavigationRail` paints only as far down as it is laid out, so pushing it
   /// below the system bar would leave the top of the column showing the canvas
   /// — and the strip the clock sits in would not read as part of the rail.
   /// Resolved the way `NavigationRail` resolves its own background, so the
   /// default rail joins up seamlessly.
+  ///
+  /// [top] is the window's top inset minus the card's top margin.
   Widget _railSurface(
     BuildContext context, {
     required RailDecoration rail,
     required double reserve,
     required SystemBarEnd end,
+    required double top,
     required Widget child,
   }) {
-    if (reserve <= 0) {
+    if (reserve <= 0 && top <= 0) {
       return child;
     }
-    final Color color =
-        rail.backgroundColor?.call(context) ??
-        NavigationRailTheme.of(context).backgroundColor ??
-        Theme.of(context).colorScheme.surface;
     return ColoredBox(
-      color: color,
+      color: _railColor(context, rail),
       child: Padding(
         padding: end == SystemBarEnd.top
-            ? EdgeInsets.only(top: reserve)
-            : EdgeInsets.only(bottom: reserve),
+            ? EdgeInsets.only(top: top + reserve)
+            : EdgeInsets.only(top: top, bottom: reserve),
         child: child,
       ),
     );
   }
+
+  /// Resolved the way `NavigationRail` resolves its own background.
+  Color _railColor(BuildContext context, RailDecoration rail) =>
+      rail.backgroundColor?.call(context) ??
+      NavigationRailTheme.of(context).backgroundColor ??
+      Theme.of(context).colorScheme.surface;
 
   /// [reserve] is kept free at [reserveEnd] for the system's own vertical
   /// bar, where the rail shares a column with one. It is inside the card, so it
@@ -691,6 +714,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required bool onLeft,
     double reserve = 0,
     SystemBarEnd reserveEnd = SystemBarEnd.top,
+    double top = 0,
   }) {
     return SizedBox(
       // The margin goes outside, so `railWidth` stays the width of the widget.
@@ -707,16 +731,19 @@ class AdaptiveShell<R> extends StatelessWidget {
           // region keeps its size while the destinations are squeezed into
           // what is left. The rail covers what is on its own edge rather than
           // growing by it — on iPhone Duo that edge is the system's vertical
-          // bar — so the inset is not its business.
+          // bar — so the inset is not its business. The top inset is already
+          // reserved by `_railSurface`, so it is removed here too.
           child: MediaQuery.removePadding(
             context: context,
             removeLeft: onLeft,
             removeRight: !onLeft,
+            removeTop: true,
             child: _railSurface(
               context,
               rail: rail,
               reserve: reserve,
               end: reserveEnd,
+              top: top,
               child: railWidget,
             ),
           ),
@@ -738,6 +765,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required bool onLeft,
     double reserve = 0,
     SystemBarEnd reserveEnd = SystemBarEnd.top,
+    double top = 0,
   }) {
     return SizedBox(
       key: railRegionKey,
@@ -760,6 +788,7 @@ class AdaptiveShell<R> extends StatelessWidget {
                 onLeft: onLeft,
                 reserve: reserve,
                 reserveEnd: reserveEnd,
+                top: top,
               ),
               if (onLeft && rail.dividerWidth > 0)
                 VerticalDivider(width: rail.dividerWidth),
@@ -1251,12 +1280,14 @@ class AdaptiveShell<R> extends StatelessWidget {
   }) {
     final Size window = MediaQuery.sizeOf(context);
     final EdgeInsets padding = MediaQuery.paddingOf(context);
-    // The card spans the window below the inset the shell reserved once; the
-    // rail's own `SafeArea` then takes the bottom one.
+    // The card is the window height minus its margins. Whatever part of the
+    // top inset the margin does not cover is reserved inside the card. The
+    // rail's own `SafeArea` takes the bottom inset.
+    final RailDecoration rail = shellConfig.rail;
     final double column =
         window.height -
-        padding.top -
-        shellConfig.rail.margin.vertical -
+        math.max(0.0, padding.top - rail.margin.top) -
+        rail.margin.vertical -
         reserve -
         padding.bottom -
         kRailLeadingSpacer -

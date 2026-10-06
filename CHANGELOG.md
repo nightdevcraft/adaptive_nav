@@ -1,3 +1,30 @@
+## 0.11.0
+
+### Breaking
+
+- In the rail layout the rail and the panes now extend under the status bar,
+  as the panes above a bottom bar already did. Before, the whole layout started
+  below it and the status bar showed one colour (the canvas or the `Scaffold`
+  background) across all three. Now it shows the rail's colour over the rail
+  and each pane's colour over that pane. The rail reserves the inset itself;
+  a pane passes `padding.top − margin.top` to its screen. A screen with an
+  `AppBar` needs no change. A screen without one has to handle
+  `MediaQuery.padding.top` itself, as it does on a phone.
+
+### Fixes
+
+- On iPhone Duo's outer display a flush rail left an unpainted gap between
+  itself and the window edge. The gap is now painted in the rail's colour.
+  New `RailDecoration.isFlush` reports whether the rail has no margin and no
+  corner radius.
+
+### Example
+
+- Panes are flush, in three shades, with the drag marker on the boundary.
+- `lib/playground.dart`: the example in a desktop window, a phone, a tablet,
+  iPhone Duo and Galaxy Z Fold8, with rotate and fold buttons. Built for the
+  web and published from `.github/workflows/pages.yml`.
+
 ## 0.10.0
 
 **iPhone Duo.** The navigation follows the system's own bars on both displays

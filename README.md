@@ -20,17 +20,15 @@ screens. You supply the branches, the `R ↔ URL` codec and the guards.
 
 ![iPhone Duo folded and unfolded, turned both ways: the rail follows the system bar, the panes split on the inner display, and the open screen survives every change](doc/screenshots/iphone-duo.gif)
 
-![A desktop window being resized: the master fills it, a detail pane arrives, and the window narrows until the detail takes the whole area](doc/screenshots/macos-example.gif)
-
-| Rotating a phone | Landscape: rail, two panes | Portrait: one stack |
-| --- | --- | --- |
-| ![A phone rotating from a stack into master-detail panes](doc/screenshots/ios-example.gif) | ![A phone in landscape showing the rail, the list and a person side by side](doc/screenshots/ios-horizontal-two-screens.png) | ![A phone in portrait showing the list with a navigation bar](doc/screenshots/ios-vertical-master-screen.png) |
+**[Try it in the browser](https://nightdevcraft.github.io/adaptive_nav/)**: the
+example app in a desktop window you can resize, on a phone and a tablet you can
+rotate, and on iPhone Duo and Galaxy Z Fold8 you can fold.
 
 ## Install
 
 ```yaml
 dependencies:
-  adaptive_nav: ^0.10.0
+  adaptive_nav: ^0.11.0
 ```
 
 ## Quick start
@@ -127,8 +125,6 @@ step through fixed states:
 | `< 600` (compact) | `NavigationBar` | master in the body, detail as an overlay **over the bar** |
 | `600–840` (medium) | `NavigationRail` | one pane — the detail covers the master |
 | `> 840` (expanded) | `NavigationRail` | two panes — master \| detail |
-
-![A desktop window with the rail on the left and two panes side by side](doc/screenshots/macos-wide-two-screens.png)
 
 A bar with two panes above it is the fourth combination, and it exists for one
 device: iPhone Duo's inner display in portrait is 669 points across and Apple

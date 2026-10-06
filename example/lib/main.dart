@@ -21,7 +21,6 @@ const List<(IconData, String)> _placeholderTabs = <(IconData, String)>[
   (Icons.star_outline, 'Starred'),
   (Icons.history, 'Recent'),
   (Icons.inventory_2_outlined, 'Archive'),
-  (Icons.insert_chart_outlined, 'Reports'),
   (Icons.delete_outline, 'Trash'),
 ];
 
@@ -63,8 +62,8 @@ class _ExampleAppState extends State<ExampleApp> {
             // for the narrowest display this demo wants two panes on: the
             // inner screen of an iPhone Duo in portrait. It is 669 points
             // across and keeps horizontal bars, so no rail takes a share and
-            // 645 are left after the card margins — still under the package's
-            // own defaults of 320 + 360, which are a desktop's.
+            // the panes get all 669 — still under the package's own defaults
+            // of 320 + 360, which are a desktop's.
             //
             // They also keep the outer display a single stack, which is what
             // Apple asks for: the widest it ever offers is 489.
@@ -96,20 +95,33 @@ class _ExampleAppState extends State<ExampleApp> {
               pageBuilder: _buildPage,
             ),
         ],
-        // Floating rounded panes on a canvas. The margins and the gap are part
-        // of the width arithmetic, not an ornament, so the package needs them
-        // here rather than in a theme.
+        // Flush panes with no margins. Set `margin`, `gap`, `radius` and
+        // `canvasColor` to get floating cards instead; margins and the gap
+        // count towards the pane widths.
+        //
+        // The marker colour makes the draggable boundary visible. On a
+        // touch screen there is no resize cursor to show it.
         panes: PaneDecoration(
-          margin: const EdgeInsets.all(12),
-          gap: 8,
-          radius: BorderRadius.circular(16),
-          canvasColor: (BuildContext context) =>
-              Theme.of(context).colorScheme.surfaceContainerHighest,
           splitHandleColor: (BuildContext context) =>
-              Theme.of(context).colorScheme.outlineVariant,
+              Theme.of(context).colorScheme.outline,
         ),
         paneSplit: _paneSplit,
       );
+
+  /// The rail (or bar), the master and the detail each get their own shade of
+  /// the same seed colour.
+  static final ThemeData _theme = () {
+    final ThemeData base = ThemeData(colorSchemeSeed: Colors.indigo);
+    final Color chrome = base.colorScheme.surfaceContainer;
+    return base.copyWith(
+      navigationRailTheme: base.navigationRailTheme.copyWith(
+        backgroundColor: chrome,
+      ),
+      navigationBarTheme: base.navigationBarTheme.copyWith(
+        backgroundColor: chrome,
+      ),
+    );
+  }();
 
   late final AdaptiveRouterDelegate<AppRoute> _delegate =
       AdaptiveRouterDelegate<AppRoute>(
@@ -174,7 +186,7 @@ class _ExampleAppState extends State<ExampleApp> {
       child: MaterialApp.router(
         title: 'adaptive_nav example',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: Colors.indigo),
+        theme: _theme,
         routerDelegate: _delegate,
         routeInformationParser: _parser,
       ),

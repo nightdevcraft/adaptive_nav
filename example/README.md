@@ -13,7 +13,7 @@ nothing remounts.
   own defaults are wider.
 - **Settings** is a plain tab with a switch. Leave the tab and come back — the
   switch is where you left it, because the branch navigator stays mounted.
-- **Teams**, **Starred**, **Recent calls**, **Archive**, **Reports** and
+- **Teams**, **Starred**, **Recent calls**, **Archive** and
   **Trash** are stubs, there to give the chrome more sections than a short rail
   can hold. Fold an iPhone Duo and the ones that do not fit move behind the
   menu button at the end of the rail; widen the window and they all come back.
@@ -56,6 +56,22 @@ cd example
 flutter create .
 flutter run
 ```
+
+### In the browser
+
+`lib/playground.dart` runs the same app inside device frames: a resizable
+desktop window, a phone, a tablet, iPhone Duo and Galaxy Z Fold8, with rotate
+and fold buttons. The [online playground](https://nightdevcraft.github.io/adaptive_nav/)
+is this file:
+
+```sh
+cd example
+flutter create --platforms=web .
+flutter run -d chrome -t lib/playground.dart
+```
+
+The page holds a single instance of the app. Switching devices, rotating and
+folding only change its `MediaQuery`, so open screens and their state stay.
 
 ### iOS 27.1 and iPhone Duo
 

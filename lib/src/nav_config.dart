@@ -312,6 +312,10 @@ class RailDecoration {
   /// A full-height strip with a divider after it.
   static const RailDecoration none = RailDecoration();
 
+  /// True when the rail has no margin and no corner radius, so it fills its
+  /// column instead of floating on the canvas.
+  bool get isFlush => margin == EdgeInsets.zero && radius == BorderRadius.zero;
+
   /// Outer margin of the rail card. Its horizontal part reduces the space left
   /// for the panes.
   final EdgeInsets margin;
