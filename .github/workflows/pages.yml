@@ -31,9 +31,13 @@ jobs:
       # The example has no platform folders in git; this generates web/.
       - run: flutter create --platforms=web --project-name adaptive_nav_example .
         working-directory: example
+      # Our own index.html, with a loading indicator.
+      - run: cp ../.github/pages/index.html web/index.html
+        working-directory: example
       - run: >-
           flutter build web --release
           --target lib/playground.dart
+          --no-web-resources-cdn
           --base-href "${{ steps.pages.outputs.base_path }}/"
         working-directory: example
       - uses: actions/upload-pages-artifact@v3
