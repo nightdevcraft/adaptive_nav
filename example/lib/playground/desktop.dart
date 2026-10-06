@@ -168,7 +168,16 @@ class _DesktopStageState extends State<DesktopStage> {
                   ? const Duration(milliseconds: 260)
                   : Duration.zero,
               curve: Curves.easeOutCubic,
-              onEnd: () => setState(() => _animate = false),
+              // Only after a real animation. With `Duration.zero` the
+              // callback fires synchronously while this subtree is being laid
+              // out, and a `setState` there leaves this element marked dirty
+              // with no frame scheduled: the window then stops redrawing
+              // until some other event asks for a frame.
+              onEnd: () {
+                if (_animate) {
+                  setState(() => _animate = false);
+                }
+              },
               child: _Window(
                 titleBar: _titleBar,
                 zoomed: _beforeZoom != null,
@@ -393,7 +402,8 @@ class _Window extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
-                                  describeLayout(content, EdgeInsets.zero),
+                                  '${content.width.round()} × '
+                                  '${content.height.round()}',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 13,

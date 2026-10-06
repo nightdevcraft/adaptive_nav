@@ -281,16 +281,6 @@ const Pose foldCoverLandscape = Pose(
   ],
 );
 
-/// What the shell will do with a window, in words.
-String describeLayout(Size size, EdgeInsets padding) {
-  final String chrome = switch (defaultChromeLayout(size, padding)) {
-    ChromePlacement.bottom => 'bottom bar',
-    ChromePlacement.left => 'rail on the left',
-    ChromePlacement.right => 'rail on the right',
-  };
-  return '${size.width.round()} × ${size.height.round()} pt · $chrome';
-}
-
 const Color kFrameRim = Color(0xFF5A5A60);
 const List<Color> kFrameMetal = <Color>[
   Color(0xFF3C3C41),
