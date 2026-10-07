@@ -9,6 +9,8 @@ import 'playground/desktop.dart';
 import 'playground/devices.dart';
 import 'playground/fold_model.dart';
 import 'playground/header.dart';
+import 'playground/open_url.dart'
+    if (dart.library.js_interop) 'playground/open_url_web.dart';
 
 /// The example app in a choice of devices, built for the web.
 ///
@@ -121,6 +123,7 @@ class _PlaygroundState extends State<Playground> with TickerProviderStateMixin {
       shot?.dispose();
       return;
     }
+    reachGoal('rotate');
     setState(() {
       _turnFrom = from;
       _turnShot = shot;
@@ -225,6 +228,7 @@ class _PlaygroundState extends State<Playground> with TickerProviderStateMixin {
       shot?.dispose();
       return;
     }
+    reachGoal(_unfolded ? 'fold' : 'unfold');
     setState(() {
       _foldedFrom = _unfolded;
       _unfolded = !_unfolded;
@@ -324,7 +328,10 @@ class _PlaygroundState extends State<Playground> with TickerProviderStateMixin {
                 device: _device,
                 onDevice: _busy
                     ? null
-                    : (Device d) => setState(() => _device = d),
+                    : (Device d) {
+                        setState(() => _device = d);
+                        reachGoal('device_${d.name}');
+                      },
                 actions: _actions,
               ),
               Expanded(

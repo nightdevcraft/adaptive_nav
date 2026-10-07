@@ -34,6 +34,18 @@ jobs:
       # Our own index.html, with a loading indicator.
       - run: cp ../.github/pages/index.html web/index.html
         working-directory: example
+      # The Metrika counter, from Settings > Secrets and variables > Actions >
+      # Variables. Unset, the page ships without analytics.
+      - name: Fill in the Metrika counter
+        env:
+          METRIKA_ID: ${{ vars.YANDEX_METRIKA_ID }}
+        run: |
+          if [[ "$METRIKA_ID" =~ ^[0-9]+$ ]]; then
+            sed -i "s/__YANDEX_METRIKA_ID__/$METRIKA_ID/" web/index.html
+          else
+            echo "YANDEX_METRIKA_ID is not set: no analytics."
+          fi
+        working-directory: example
       - run: >-
           flutter build web --release
           --target lib/playground.dart

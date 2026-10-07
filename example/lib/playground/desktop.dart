@@ -2,8 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'devices.dart';
-
 /// Builds the app for a window whose content area is [size].
 typedef ScreenBuilder = Widget Function(Size size);
 

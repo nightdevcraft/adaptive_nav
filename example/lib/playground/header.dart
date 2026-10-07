@@ -365,7 +365,10 @@ class _Link extends StatelessWidget {
     return Material(
       type: MaterialType.transparency,
       child: InkWell(
-        onTap: () => openUrl(url),
+        onTap: () {
+          reachGoal('open_${label.replaceAll('.', '').toLowerCase()}');
+          openUrl(url);
+        },
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
