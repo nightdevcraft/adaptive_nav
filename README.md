@@ -28,7 +28,7 @@ rotate, and on iPhone Duo and Galaxy Z Fold8 you can fold.
 
 ```yaml
 dependencies:
-  adaptive_nav: ^0.11.0
+  adaptive_nav: ^0.12.0
 ```
 
 ## Quick start
@@ -201,6 +201,45 @@ user is asked about unsaved work all the same — and a refusal leaves the tab
 where it was. Screens without a guard never prompt, and such a switch stays
 synchronous, completing in the same frame.
 
+## System back
+
+The shell tells Android in one answer whether back belongs to the app, so
+predictive back reaches the app whenever there is something to go back from:
+a dialog, the shell drawer, a pushed screen, a detail pane, a `PopScope` that
+blocks pop.
+
+A drawer or a `Scaffold.showBottomSheet` **inside a screen** is not reported —
+the same as in a plain `MaterialApp` — so at a branch root back closes the app
+instead. Block pop while the drawer is open and close it yourself:
+
+```dart
+class _InboxState extends State<Inbox> {
+  final GlobalKey<ScaffoldState> _scaffold = GlobalKey<ScaffoldState>();
+  bool _drawerOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_drawerOpen,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) _scaffold.currentState?.closeDrawer();
+      },
+      child: Scaffold(
+        key: _scaffold,
+        drawer: const Drawer(child: Filters()),
+        onDrawerChanged: (bool open) => setState(() => _drawerOpen = open),
+        body: const InboxList(),
+      ),
+    );
+  }
+}
+```
+
+At a branch root back goes to the system. With
+`AdaptiveShellConfig.backToBranch: 0` back at the root of any other branch
+switches to the start tab instead. The root's `onExit` is asked as on a tab
+tap. The switch has no predictive back preview.
+
 ## Deep links
 
 `AdaptiveRouteInformationParser` turns an incoming URL into a `NavState` with
@@ -268,6 +307,11 @@ The margins and the gap are **data**, not decoration painted on top: they reduce
 the width left to the panes and therefore move the "one pane or two" threshold.
 If your screens compute the layout with a formula of their own, they have to
 subtract the same values.
+
+The boundary sits at `MasterDetailConfig.paneRatio` of the pane area.
+`alignToWindowCenter: true` puts it on the window's horizontal centre instead,
+so a rail on the left comes out of the master's half. The user's drag and an
+active fold ([Half open](#half-open)) still win, and so do the pane minimums.
 
 Pass a `PaneSplitController` and the boundary becomes draggable, per branch,
 clamped by both panes' minimum widths. The controller is owned by the app, so
@@ -411,7 +455,7 @@ the card's margin.
 - **The inner display in portrait needs smaller minimums.** It is the roomiest
   posture — no rail takes a share, so all 669 points go to the panes — but the
   defaults ask for 680. Pick `masterMinWidth` and `detailMinWidth` that fit,
-  the way [`example/`](example) does with 300 and 330, or accept a single stack
+  the way [`example/`](example) does with 270 and 270, or accept a single stack
   there. Values that fit 669 still leave the outer display a single stack,
   which is what Apple asks for.
 - **Build against the iOS 27.1 SDK.** Older SDKs put the app in a compatibility

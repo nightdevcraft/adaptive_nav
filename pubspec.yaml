@@ -3,7 +3,7 @@ description: >-
   A Navigator 2.0 router that renders one navigation state as a stack or as
   master-detail panes and keeps screen state across resizes and folds. Ready
   for iPhone Duo.
-version: 0.11.0
+version: 0.12.0
 
 repository: https://github.com/nightdevcraft/adaptive_nav
 issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues

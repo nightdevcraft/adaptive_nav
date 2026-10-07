@@ -4,24 +4,15 @@ import 'package:flutter/material.dart';
 import 'data.dart';
 import 'routes.dart';
 import 'screens.dart';
+import 'sections.dart';
 
-/// Sections that exist only to fill the chrome, in branch order after People
-/// and Settings.
-///
-/// The labels are deliberately uneven: "Trash" fits a rail on one line and
-/// "Recent calls" does not, and the taller one sets the height every
-/// destination is counted at when the shell works out how many fit.
-///
-/// A label with no space in it has nowhere to break, so Material splits it
-/// mid-word — "Favourites" becomes "Favourite" and a lone "s". In an 80-point
-/// rail that is a reason to keep labels short, which is Apple's advice for the
-/// vertical bar too.
-const List<(IconData, String)> _placeholderTabs = <(IconData, String)>[
-  (Icons.groups_outlined, 'Teams'),
-  (Icons.star_outline, 'Starred'),
-  (Icons.history, 'Recent'),
-  (Icons.inventory_2_outlined, 'Archive'),
-  (Icons.delete_outline, 'Trash'),
+/// Branches after People and Settings, in order.
+const List<(String, IconData, String)> _sections = <(String, IconData, String)>[
+  ('teams', Icons.groups_outlined, 'Teams'),
+  ('starred', Icons.star_outline, 'Starred'),
+  ('recent', Icons.history, 'Recent'),
+  ('archive', Icons.inventory_2_outlined, 'Archive'),
+  ('trash', Icons.delete_outline, 'Trash'),
 ];
 
 void main() => runApp(const ExampleApp());
@@ -67,10 +58,12 @@ class _ExampleAppState extends State<ExampleApp> {
             //
             // They also keep the outer display a single stack, which is what
             // Apple asks for: the widest it ever offers is 489.
+            //
+            // The boundary starts on the window centre — the hinge, on a Duo.
             masterDetail: const MasterDetailConfig(
-              paneRatio: 0.36,
-              masterMinWidth: 300,
-              detailMinWidth: 330,
+              masterMinWidth: 270,
+              detailMinWidth: 270,
+              alignToWindowCenter: true,
             ),
             // Details fade when they swap the contents of a pane and slide
             // when they take the whole screen, decided as the animation runs.
@@ -87,11 +80,11 @@ class _ExampleAppState extends State<ExampleApp> {
           // iPhone Duo. What does not fit goes behind the menu button at the
           // end of the rail; on a desktop window they all fit and no button
           // appears.
-          for (int i = 0; i < _placeholderTabs.length; i++)
+          for (final (String id, IconData icon, String label) in _sections)
             BranchConfig<AppRoute>(
-              id: 'tab-$i',
-              icon: _placeholderTabs[i].$1,
-              label: _placeholderTabs[i].$2,
+              id: id,
+              icon: icon,
+              label: label,
               pageBuilder: _buildPage,
             ),
         ],
@@ -106,6 +99,8 @@ class _ExampleAppState extends State<ExampleApp> {
               Theme.of(context).colorScheme.outline,
         ),
         paneSplit: _paneSplit,
+        // Back at another tab's root returns to People.
+        backToBranch: 0,
       );
 
   /// The rail (or bar), the master and the detail each get their own shade of
@@ -144,12 +139,15 @@ class _ExampleAppState extends State<ExampleApp> {
           transition: AppTransition.platform,
         ),
       ]),
-      for (int i = 0; i < _placeholderTabs.length; i++)
+      for (final AppRoute root in const <AppRoute>[
+        TeamsList(),
+        StarredRoute(),
+        NotesList(),
+        ArchiveRoute(),
+        TrashRoute(),
+      ])
         BranchStack<AppRoute>(<NavEntry<AppRoute>>[
-          NavEntry<AppRoute>(
-            route: PlaceholderTab(i),
-            transition: AppTransition.platform,
-          ),
+          NavEntry<AppRoute>(route: root, transition: AppTransition.platform),
         ]),
     ],
   );
@@ -165,10 +163,13 @@ class _ExampleAppState extends State<ExampleApp> {
     PersonDetail(:final int id) => PersonDetailScreen(id: id),
     PersonEdit(:final int id) => PersonEditScreen(id: id),
     SettingsRoute() => const SettingsScreen(),
-    PlaceholderTab(:final int index) => PlaceholderTabScreen(
-      icon: _placeholderTabs[index].$1,
-      label: _placeholderTabs[index].$2,
-    ),
+    TeamsList() => const TeamsListScreen(),
+    TeamDetail(:final int id) => TeamDetailScreen(id: id),
+    StarredRoute() => const StarredScreen(),
+    NotesList() => const NotesListScreen(),
+    NoteDetail(:final int id) => NoteDetailScreen(id: id),
+    ArchiveRoute() => const ArchiveScreen(),
+    TrashRoute() => const TrashScreen(),
   };
 
   @override

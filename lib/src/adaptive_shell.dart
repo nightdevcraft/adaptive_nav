@@ -47,6 +47,8 @@ class AdaptiveShell<R> extends StatelessWidget {
     required this.onSelectBranch,
     required this.buildPage,
     required this.onDidRemovePage,
+    required this.onNavigationNotification,
+    required this.onDrawerChanged,
     super.key,
   });
 
@@ -73,6 +75,17 @@ class AdaptiveShell<R> extends StatelessWidget {
   })
   buildPage;
   final DidRemovePageCallback onDidRemovePage;
+
+  /// Every branch navigator's `NavigationNotification` goes here instead of
+  /// to `WidgetsApp`; the delegate sends one answer for the whole shell.
+  final bool Function(
+    GlobalKey<NavigatorState> navigator,
+    NavigationNotification notification,
+  )
+  onNavigationNotification;
+
+  /// The shell drawer opened or closed.
+  final DrawerCallback onDrawerChanged;
 
   static const double dividerWidth = kDefaultRailDividerWidth;
 
@@ -130,12 +143,17 @@ class AdaptiveShell<R> extends StatelessWidget {
   }
 
   Widget _nav(GlobalKey<NavigatorState> key, List<Page<Object?>> pages) {
-    // Several navigators cannot share the `HeroController` from `MaterialApp`.
-    return HeroControllerScope.none(
-      child: Navigator(
-        key: key,
-        pages: pages,
-        onDidRemovePage: onDidRemovePage,
+    // Outside the `Navigator`, which corrects its own report first. Several
+    // navigators cannot share the `HeroController` from `MaterialApp`.
+    return NotificationListener<NavigationNotification>(
+      onNotification: (NavigationNotification n) =>
+          onNavigationNotification(key, n),
+      child: HeroControllerScope.none(
+        child: Navigator(
+          key: key,
+          pages: pages,
+          onDidRemovePage: onDidRemovePage,
+        ),
       ),
     );
   }
@@ -274,6 +292,7 @@ class AdaptiveShell<R> extends StatelessWidget {
       return Scaffold(
         key: shellConfig.scaffoldKey,
         drawer: _drawer(context, rail: false),
+        onDrawerChanged: onDrawerChanged,
         resizeToAvoidBottomInset: false,
         extendBody: shellConfig.extendBodyBehindBar,
         body: _onCanvas(
@@ -326,6 +345,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         Scaffold(
           key: shellConfig.scaffoldKey,
           drawer: _drawer(context, rail: false),
+          onDrawerChanged: onDrawerChanged,
           resizeToAvoidBottomInset: false, // see the rail `Scaffold` below
           extendBody: shellConfig.extendBodyBehindBar,
           body: _mastersStack(),
@@ -420,6 +440,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     return Scaffold(
       key: shellConfig.scaffoldKey,
       drawer: _drawer(context, rail: true),
+      onDrawerChanged: onDrawerChanged,
       // The keyboard belongs to the focused pane, not to the shell. With the
       // default `true` its height was subtracted twice — once here and again by
       // the screen inside a pane, which receives the window's `viewInsets`
@@ -962,16 +983,19 @@ class AdaptiveShell<R> extends StatelessWidget {
                 paneArea: width,
               )
         : null;
+    final double? centre = md.alignToWindowCenter
+        ? MediaQuery.sizeOf(context).width / 2 - origin
+        : null;
     final PaneSplitController? split = shellConfig.paneSplit;
     if (split == null) {
-      return _resizablePanes(context, md, width, underlap, fold, null);
+      return _resizablePanes(context, md, width, underlap, fold, centre, null);
     }
     // Only this subtree rebuilds on a drag; the delegate knows nothing about
     // it.
     return ListenableBuilder(
       listenable: split,
       builder: (BuildContext context, Widget? _) =>
-          _resizablePanes(context, md, width, underlap, fold, split),
+          _resizablePanes(context, md, width, underlap, fold, centre, split),
     );
   }
 
@@ -998,6 +1022,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     double width,
     PaneUnderlap underlap,
     PaneFold? fold,
+    double? centre,
     PaneSplitController? split,
   ) {
     final PaneDecoration panes = shellConfig.panes;
@@ -1013,6 +1038,7 @@ class AdaptiveShell<R> extends StatelessWidget {
             width,
             gap: gap,
             fraction: split?.fractionOf(branchId),
+            centre: centre,
           );
     final bool collapsed = md.collapseWhenDetailEmpty && _activeDetailEmpty;
     // Physical: what the `Stack` below actually spans.
@@ -1040,6 +1066,7 @@ class AdaptiveShell<R> extends StatelessWidget {
                 split: split,
                 branchId: branchId,
                 available: width,
+                centre: centre,
               ),
       ),
     );
@@ -1051,6 +1078,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required PaneSplitController split,
     required Object branchId,
     required double available,
+    required double? centre,
   }) {
     // Nothing to move: at the threshold width both panes are at their minimums.
     if (!md.isResizable(available, gap: panes.gap)) {
@@ -1065,6 +1093,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         available,
         gap: panes.gap,
         fraction: split.fractionOf(branchId),
+        centre: centre,
       );
       split.drag(
         branchId,

@@ -1,3 +1,32 @@
+## 0.12.0
+
+### Features
+
+- `AdaptiveShellConfig.backToBranch`: system back at the root of any other
+  branch switches to that branch instead of closing the app, the way most
+  Android apps return to their start tab. Dialogs, the drawer, pushed screens
+  and a detail are popped first, and the root's `onExit` is asked as on a tab
+  tap. `null`, the default, keeps the old behaviour.
+- `MasterDetailConfig.alignToWindowCenter` puts the boundary between the panes
+  on the window's horizontal centre instead of at `paneRatio`. The user's drag
+  and an active fold still win, and the pane minimums still apply.
+
+### Fixes
+
+- On Android with predictive back, system back could close the app instead of
+  going back — after a push into a branch without master-detail, or after
+  switching to a tab with screens above its root. Every navigator of the shell
+  reported to the system and the last one won. The shell now sends one answer
+  for all of them. Apps that worked around this with their own
+  `onNavigationNotification` in `MaterialApp.router` can remove it.
+- System back closes a dialog on the root navigator (the default for
+  `showDialog`) instead of the screen under it or the app.
+- System back closes an open shell drawer, with predictive back too. A drawer
+  or `showBottomSheet` inside a screen still is not reported to the system;
+  see "System back" in the README.
+- A screen's own `PopScope(canPop: false)` now holds system back for an entry
+  pushed without `onExit`; the screen used to be removed anyway.
+
 ## 0.11.0
 
 ### Breaking

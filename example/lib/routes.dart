@@ -52,23 +52,79 @@ class SettingsRoute extends AppRoute {
   int get hashCode => (SettingsRoute).hashCode;
 }
 
-/// A section that is only there to fill the chrome: enough of them and the
-/// rail runs out of column, which is what the overflow menu is for.
-class PlaceholderTab extends AppRoute {
-  const PlaceholderTab(this.index);
-
-  final int index;
+class TeamsList extends AppRoute {
+  const TeamsList();
 
   @override
-  bool operator ==(Object other) =>
-      other is PlaceholderTab && other.index == index;
+  bool operator ==(Object other) => other is TeamsList;
 
   @override
-  int get hashCode => Object.hash(PlaceholderTab, index);
+  int get hashCode => (TeamsList).hashCode;
 }
 
-/// Branch index of the first placeholder; People is 0 and Settings is 1.
-const int kFirstPlaceholderBranch = 2;
+class TeamDetail extends AppRoute {
+  const TeamDetail(this.id);
+
+  final int id;
+
+  @override
+  bool operator ==(Object other) => other is TeamDetail && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(TeamDetail, id);
+}
+
+class StarredRoute extends AppRoute {
+  const StarredRoute();
+
+  @override
+  bool operator ==(Object other) => other is StarredRoute;
+
+  @override
+  int get hashCode => (StarredRoute).hashCode;
+}
+
+class NotesList extends AppRoute {
+  const NotesList();
+
+  @override
+  bool operator ==(Object other) => other is NotesList;
+
+  @override
+  int get hashCode => (NotesList).hashCode;
+}
+
+class NoteDetail extends AppRoute {
+  const NoteDetail(this.id);
+
+  final int id;
+
+  @override
+  bool operator ==(Object other) => other is NoteDetail && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(NoteDetail, id);
+}
+
+class ArchiveRoute extends AppRoute {
+  const ArchiveRoute();
+
+  @override
+  bool operator ==(Object other) => other is ArchiveRoute;
+
+  @override
+  int get hashCode => (ArchiveRoute).hashCode;
+}
+
+class TrashRoute extends AppRoute {
+  const TrashRoute();
+
+  @override
+  bool operator ==(Object other) => other is TrashRoute;
+
+  @override
+  int get hashCode => (TrashRoute).hashCode;
+}
 
 /// Deep links and the address bar on the web go through this codec.
 class AppRouteCodec extends RouteCodec<AppRoute> {
@@ -80,36 +136,48 @@ class AppRouteCodec extends RouteCodec<AppRoute> {
     PersonDetail(:final int id) => Uri.parse('/people/$id'),
     PersonEdit(:final int id) => Uri.parse('/people/$id/edit'),
     SettingsRoute() => Uri.parse('/settings'),
-    PlaceholderTab(:final int index) => Uri.parse('/tab/$index'),
+    TeamsList() => Uri.parse('/teams'),
+    TeamDetail(:final int id) => Uri.parse('/teams/$id'),
+    StarredRoute() => Uri.parse('/starred'),
+    NotesList() => Uri.parse('/recent'),
+    NoteDetail(:final int id) => Uri.parse('/recent/$id'),
+    ArchiveRoute() => Uri.parse('/archive'),
+    TrashRoute() => Uri.parse('/trash'),
   };
 
   @override
   AppRoute decode(Uri uri) {
     final List<String> seg = uri.pathSegments;
-    if (seg.isNotEmpty && seg.first == 'settings') {
-      return const SettingsRoute();
-    }
-    if (seg.length >= 2 && seg.first == 'tab') {
-      final int? index = int.tryParse(seg[1]);
-      if (index != null) {
-        return PlaceholderTab(index);
-      }
-    }
-    if (seg.length >= 2 && seg.first == 'people') {
-      final int? id = int.tryParse(seg[1]);
-      if (id != null) {
+    final int? id = seg.length >= 2 ? int.tryParse(seg[1]) : null;
+    switch (seg.isEmpty ? '' : seg.first) {
+      case 'settings':
+        return const SettingsRoute();
+      case 'teams':
+        return id != null ? TeamDetail(id) : const TeamsList();
+      case 'starred':
+        return const StarredRoute();
+      case 'recent':
+        return id != null ? NoteDetail(id) : const NotesList();
+      case 'archive':
+        return const ArchiveRoute();
+      case 'trash':
+        return const TrashRoute();
+      case 'people' when id != null:
         return seg.length >= 3 && seg[2] == 'edit'
             ? PersonEdit(id)
             : PersonDetail(id);
-      }
     }
     return const PeopleList();
   }
 
   @override
   int branchOf(AppRoute route) => switch (route) {
-    SettingsRoute() => 1,
-    PlaceholderTab(:final int index) => kFirstPlaceholderBranch + index,
     PeopleList() || PersonDetail() || PersonEdit() => 0,
+    SettingsRoute() => 1,
+    TeamsList() || TeamDetail() => 2,
+    StarredRoute() => 3,
+    NotesList() || NoteDetail() => 4,
+    ArchiveRoute() => 5,
+    TrashRoute() => 6,
   };
 }

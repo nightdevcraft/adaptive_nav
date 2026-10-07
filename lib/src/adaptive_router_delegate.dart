@@ -20,7 +20,12 @@ class AdaptiveRouterDelegate<R> extends RouterDelegate<NavState<R>>
   AdaptiveRouterDelegate({
     required this.shellConfig,
     required NavState<R> initialState,
-  }) : _state = initialState {
+  }) : assert(
+         shellConfig.backToBranch == null ||
+             shellConfig.backToBranch! < shellConfig.branches.length,
+         'backToBranch is out of range of branches',
+       ),
+       _state = initialState {
     _branchKeys = <BranchNavigatorKeys>[
       for (int i = 0; i < shellConfig.branches.length; i++)
         BranchNavigatorKeys(),
@@ -290,9 +295,19 @@ class AdaptiveRouterDelegate<R> extends RouterDelegate<NavState<R>>
 
   void _guardedPop(NavEntry<R> entry) {
     _guard(entry).then((bool ok) {
-      if (ok) {
-        _removeEntry(entry);
+      if (!ok) {
+        return;
       }
+      // A guarded root is never removed: here it is system back on the way to
+      // `backToBranch`, and the gate that just passed stands for the switch.
+      final BranchStack<R> active = _state.active;
+      if (_backLeadsToBranch() &&
+          active.entries.length == 1 &&
+          identical(active.root, entry)) {
+        _apply(_state.copyWith(activeBranch: shellConfig.backToBranch));
+        return;
+      }
+      _removeEntry(entry);
     });
   }
 
@@ -342,30 +357,86 @@ class AdaptiveRouterDelegate<R> extends RouterDelegate<NavState<R>>
   // ------------------------------------------------- Router integration
 
   /// The navigator holding the active branch's top screen.
-  NavigatorState? _topNavigator() {
+  GlobalKey<NavigatorState> _topNavigatorKey() {
     final BranchNavigatorKeys keys = _branchKeys[_state.activeBranch];
     final bool inDetail =
         shellConfig.branches[_state.activeBranch].masterDetail != null &&
         _state.active.entries.length > 1;
-    return (inDetail ? keys.detail : keys.master).currentState;
+    return inDetail ? keys.detail : keys.master;
+  }
+
+  // ------------------------------------------------- Predictive back
+
+  /// The last `canHandlePop` each navigator reported. Inactive ones are kept
+  /// too: a tab switch makes a navigator the top one without a report.
+  final Map<GlobalKey<NavigatorState>, bool> _canHandlePop =
+      <GlobalKey<NavigatorState>, bool>{};
+
+  final GlobalKey<_BackReporterState> _backReporterKey =
+      GlobalKey<_BackReporterState>();
+
+  /// Whether [popRoute] would claim system back, checked in the same order.
+  ///
+  /// `canPop()` sees local history entries (the drawer, `showBottomSheet`),
+  /// which send no notification; the reported value sees a blocking `PopScope`,
+  /// which `canPop()` does not.
+  bool _frameworkHandlesBack() =>
+      _navigatorHandlesBack(_rootKey) ||
+      _navigatorHandlesBack(_topNavigatorKey()) ||
+      _state.active.hasDetail ||
+      _backLeadsToBranch();
+
+  bool _backLeadsToBranch() =>
+      shellConfig.backToBranch != null &&
+      _state.activeBranch != shellConfig.backToBranch;
+
+  bool _navigatorHandlesBack(GlobalKey<NavigatorState> key) =>
+      (key.currentState?.canPop() ?? false) || (_canHandlePop[key] ?? false);
+
+  /// Swallows a navigator's report. `WidgetsApp` passes the last one on to
+  /// Android, and with several navigators mounted the last one is often wrong:
+  /// an empty detail says "no" and back closes the app.
+  bool _handleNavigationNotification(
+    GlobalKey<NavigatorState> navigator,
+    NavigationNotification notification,
+  ) {
+    _canHandlePop[navigator] = notification.canHandlePop;
+    // A `Navigator` dispatches after the frame, so no need to schedule.
+    _backReporterKey.currentState?.report();
+    return true;
   }
 
   /// System back.
   ///
-  /// The branch's own `Navigator` gets it first, or we would remove the top
+  /// The root navigator goes first: a dialog or the shell drawer sits over
+  /// every branch.
+  ///
+  /// Then the branch's own `Navigator`, or we would remove the top
   /// screen behind its `PopScope` — and a screen may intercept back for a
   /// reason. `maybePop` also serves guarded entries, whose `PopScope` routes
   /// the decision back here, and it returns `true` even when the screen refused
   /// the pop: back counts as handled and the app is not backgrounded.
+  ///
+  /// Last, at another branch's root, the switch to
+  /// [AdaptiveShellConfig.backToBranch], gated like a tab tap.
   @override
   Future<bool> popRoute() async {
-    final NavigatorState? nav = _topNavigator();
+    final NavigatorState? root = _rootKey.currentState;
+    if (root != null && root.canPop()) {
+      await root.maybePop();
+      return true;
+    }
+    final NavigatorState? nav = _topNavigatorKey().currentState;
     if (nav != null && await nav.maybePop()) {
       return true;
     }
     if (_state.active.entries.length > 1) {
       await pop();
       return true; // back handled, even if the gate refused
+    }
+    if (_backLeadsToBranch()) {
+      await goBranch(shellConfig.backToBranch!);
+      return true; // handled, even if the gate refused
     }
     return false; // nothing to pop — hand it to the system
   }
@@ -413,6 +484,18 @@ class AdaptiveRouterDelegate<R> extends RouterDelegate<NavState<R>>
 
   @override
   Widget build(BuildContext context) {
+    return _BackReporter(
+      key: _backReporterKey,
+      frameworkHandlesBack: _frameworkHandlesBack,
+      child: NotificationListener<NavigationNotification>(
+        onNotification: (NavigationNotification n) =>
+            _handleNavigationNotification(_rootKey, n),
+        child: _buildRootNavigator(),
+      ),
+    );
+  }
+
+  Widget _buildRootNavigator() {
     return Navigator(
       key: _rootKey,
       onDidRemovePage: (_) {}, // a single page, which is never removed
@@ -441,9 +524,65 @@ class AdaptiveRouterDelegate<R> extends RouterDelegate<NavState<R>>
                   detailIndex: detailIndex,
                 ),
             onDidRemovePage: _handleDidRemovePage,
+            onNavigationNotification: _handleNavigationNotification,
+            // The drawer's local history entry sends no notification.
+            onDrawerChanged: (_) => _backReporterKey.currentState?.schedule(),
           ),
         ),
       ],
     );
+  }
+}
+
+/// Tells `WidgetsApp` whether the shell handles system back, for all of its
+/// navigators at once.
+///
+/// Every report is a full recount, so whichever runs last is right. Equal
+/// values are sent again: `WidgetsApp` drops reports until it has a lifecycle
+/// state.
+class _BackReporter extends StatefulWidget {
+  const _BackReporter({
+    required this.frameworkHandlesBack,
+    required this.child,
+    super.key,
+  });
+
+  final bool Function() frameworkHandlesBack;
+  final Widget child;
+
+  @override
+  State<_BackReporter> createState() => _BackReporterState();
+}
+
+class _BackReporterState extends State<_BackReporter> {
+  bool _scheduled = false;
+
+  /// Reports once the current frame is done, and makes sure there is one.
+  void schedule() {
+    if (_scheduled) {
+      return;
+    }
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _scheduled = false;
+      report();
+    }, debugLabel: 'AdaptiveRouterDelegate.reportBack');
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void report() {
+    if (!mounted) {
+      return;
+    }
+    NavigationNotification(
+      canHandlePop: widget.frameworkHandlesBack(),
+    ).dispatch(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Rebuilt on every state change; a tab switch makes no navigator report.
+    schedule();
+    return widget.child;
   }
 }

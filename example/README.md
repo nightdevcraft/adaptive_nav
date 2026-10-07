@@ -5,22 +5,22 @@ nothing remounts.
 
 ## What it shows
 
-- **People** is a master-detail branch. Below ~638 logical pixels of pane area
-  it is a plain stack; above it the list and the person sit side by side, and
-  the boundary between them can be dragged (`PaneSplitController`, with
-  `onCommit` firing on release). The minimums behind that number are picked so
-  the inner display of an iPhone Duo in portrait still splits; the package's
-  own defaults are wider.
+- **People** is a master-detail branch. Below 540 logical pixels of pane area
+  it is a plain stack; above it the list and the person sit side by side, the
+  boundary starts on the window centre (`alignToWindowCenter`) and can be
+  dragged (`PaneSplitController`, with `onCommit` firing on release). The
+  minimums behind that number are picked so the inner display of an iPhone Duo
+  in portrait still splits; the package's own defaults are wider.
 - **Settings** is a plain tab with a switch. Leave the tab and come back — the
   switch is where you left it, because the branch navigator stays mounted.
-- **Teams**, **Starred**, **Recent calls**, **Archive** and
-  **Trash** are stubs, there to give the chrome more sections than a short rail
-  can hold. Fold an iPhone Duo and the ones that do not fit move behind the
-  menu button at the end of the rail; widen the window and they all come back.
-  Each keeps a tap count, so a trip through the menu and back shows that
-  switching sections does not rebuild them.
-  "Recent calls" is the label that takes two lines in an 80-point rail, and
-  every destination is counted at that height.
+- **Teams** is a list with a pushed team screen. **Starred** has a filter
+  drawer of its own, closed by system back through the README's `PopScope`
+  workaround. **Recent** holds notes whose editor blocks back while the text
+  is unsaved. **Archive** and **Trash** ask in a dialog. Together they give the
+  chrome more sections than a short rail can hold: fold an iPhone Duo and the
+  ones that do not fit move behind the menu button at the end of the rail.
+- System back at the root of any tab but People returns to People
+  (`backToBranch: 0`).
 - Picking another person uses `resetDetailTo`, not `push`: a lateral move that
   replaces a detail of any depth without flashing an empty pane.
 - The editor declares an `onExit` guard. Back, a tab switch or picking another
@@ -32,13 +32,14 @@ nothing remounts.
   bottom edge when it covers the navigation bar.
 - Saving raises a snack bar from the screen's own context, so it appears in the
   detail pane rather than across the window.
-- Routes encode as `/people`, `/people/3`, `/people/3/edit` and `/settings`, so
-  deep links and the browser address bar work.
+- Routes encode as `/people`, `/people/3`, `/people/3/edit`, `/settings`,
+  `/teams`, `/teams/1`, `/starred`, `/recent`, `/recent/1`, `/archive` and
+  `/trash`, so deep links and the browser address bar work.
 
 ## What it leaves out
 
 Deliberately — one readable app cannot also be a feature matrix. Not shown
-here: custom `barBuilder` / `railBuilder` chrome, the drawer, chromeless mode
+here: custom `barBuilder` / `railBuilder` chrome, the shell drawer, chromeless mode
 and hidden branches, the `redirect` auth hook and `reevaluate`, immersive mode,
 rail decoration, and `detailPlaceholder` (which never appears while an empty
 detail collapses, as it does by default).

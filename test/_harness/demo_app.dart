@@ -337,6 +337,7 @@ class DemoHarness {
     bool collapseWhenDetailEmpty = true,
     WidgetBuilder? detailPlaceholder,
     bool alignToFold = true,
+    bool alignToWindowCenter = false,
     FoldLocator? foldLocator,
     SystemBarMetrics systemBar = SystemBarMetrics.measured,
     double masterMinWidth = 320,
@@ -348,6 +349,8 @@ class DemoHarness {
     PaneSplitController? paneSplit,
     ValueListenable<bool>? immersive,
     Duration immersiveDuration = kDefaultImmersiveDuration,
+    int? backToBranch,
+    this.wrapPage,
   }) {
     NavEntry<DemoRoute> root(DemoRoute route) =>
         NavEntry<DemoRoute>(route: route, transition: AppTransition.platform);
@@ -385,6 +388,7 @@ class DemoHarness {
               detailMinWidth: detailMinWidth,
               collapseWhenDetailEmpty: collapseWhenDetailEmpty,
               alignToFold: alignToFold,
+              alignToWindowCenter: alignToWindowCenter,
             ),
             pageBuilder: _buildPage,
           ),
@@ -423,6 +427,7 @@ class DemoHarness {
         paneSplit: paneSplit,
         immersive: immersive,
         immersiveDuration: immersiveDuration,
+        backToBranch: backToBranch,
       ),
       initialState: baseState,
     );
@@ -438,18 +443,31 @@ class DemoHarness {
   TextStyle? _railLabelStyle;
   late final AdaptiveRouteInformationParser<DemoRoute> parser;
 
-  Widget _buildPage(DemoRoute route) => switch (route) {
-    DemoList() => const DemoListScreen(),
-    DemoDetail(:final int id) => DemoDetailScreen(id: id),
-    DemoEdit(:final int id) => DemoEditScreen(id: id),
-    DemoHome() => const DemoHomeScreen(),
-    DemoProfile() => const DemoProfileScreen(),
-  };
+  /// Wraps or replaces the screen built for a route; `null` leaves the
+  /// default screens alone.
+  final Widget Function(DemoRoute route, Widget screen)? wrapPage;
 
-  Widget app() => DemoNav(
+  Widget _buildPage(DemoRoute route) {
+    final Widget screen = switch (route) {
+      DemoList() => const DemoListScreen(),
+      DemoDetail(:final int id) => DemoDetailScreen(id: id),
+      DemoEdit(:final int id) => DemoEditScreen(id: id),
+      DemoHome() => const DemoHomeScreen(),
+      DemoProfile() => const DemoProfileScreen(),
+    };
+    return wrapPage?.call(route, screen) ?? screen;
+  }
+
+  /// [onNavigationNotification] goes to `MaterialApp.router` as is: it sees
+  /// what the app would tell the system about back.
+  Widget app({
+    NotificationListenerCallback<NavigationNotification>?
+    onNavigationNotification,
+  }) => DemoNav(
     delegate: delegate,
     child: MaterialApp.router(
       debugShowCheckedModeBanner: false,
+      onNavigationNotification: onNavigationNotification,
       theme: _railLabelStyle == null
           ? null
           : ThemeData(

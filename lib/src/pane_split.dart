@@ -13,7 +13,8 @@ class PaneSplitController extends ChangeNotifier {
     : _fractions = <Object, double>{...?initial};
 
   /// A branch missing from the map is laid out with
-  /// `MasterDetailConfig.paneRatio`.
+  /// `MasterDetailConfig.paneRatio`, or on the window centre where
+  /// `MasterDetailConfig.alignToWindowCenter` is on.
   final Map<Object, double> _fractions;
 
   // Branches the user has already dragged, so a late restore cannot overwrite

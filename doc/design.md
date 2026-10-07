@@ -378,6 +378,21 @@ Two details that are easy to get wrong:
 - After the gate, the stack is compared by identity against what was gated. A
   push or a deep link may have arrived meanwhile, and it never passed the gate.
 
+## One answer for system back
+
+With predictive back Android hands back to Flutter only while the app has said
+it can handle it, and `WidgetsApp` passes on whatever the last
+`NavigationNotification` said. One navigator per app makes that right; the
+shell mounts several — every visited branch, a master and a detail — and the
+last to report is often the wrong one: an empty detail says "no" after a push
+into another tab, and back closes the app.
+
+So each navigator's report stops at the shell, and the delegate sends one of
+its own, recounted from the same rule `popRoute` follows: the root navigator
+(dialogs, the drawer), the active branch's top screen, a detail, then
+`backToBranch`. It is recounted after every state change too, because a tab
+switch changes which navigator is on top without any of them reporting.
+
 ## `resetDetailTo` is a primitive, not a composition
 
 Picking another item in a master-detail list is a lateral move: the old detail,

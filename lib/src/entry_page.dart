@@ -24,7 +24,9 @@ Page<Object?> buildEntryPage<R>(
     // delegate; an unguarded one is synchronised by `onDidRemovePage`.
     canPop: !guarded,
     onPopInvokedWithResult: (bool didPop, Object? result) {
-      if (didPop) {
+      // Also called when the screen's own `PopScope` blocks pop; an unguarded
+      // entry then stays.
+      if (didPop || !guarded) {
         return;
       }
       onGuardedPop(entry);

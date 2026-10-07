@@ -412,9 +412,13 @@ class MasterDetailConfig {
     this.detailMinWidth = 360,
     this.collapseWhenDetailEmpty = true,
     this.alignToFold = true,
+    this.alignToWindowCenter = false,
   });
 
   /// Share of the available width given to the master pane.
+  ///
+  /// Overridden by [alignToWindowCenter], by an active fold ([alignToFold])
+  /// and by the user's drag.
   final double paneRatio;
 
   final double masterMinWidth;
@@ -442,6 +446,13 @@ class MasterDetailConfig {
   /// Android and not yet on iOS; see `FoldMetrics`.
   final bool alignToFold;
 
+  /// Put the boundary on the window's horizontal centre instead of at
+  /// [paneRatio], with the gap split evenly around it.
+  ///
+  /// A rail on the left comes out of the master's half. The user's drag and an
+  /// active fold still win, and the pane minimums still apply.
+  final bool alignToWindowCenter;
+
   /// Whether [available] — the pane width, decoration margins already removed —
   /// fits two unsqueezed panes plus the [gap]. If not, the branch renders as a
   /// compact stack: a detail narrower than its list is worse than no split.
@@ -450,15 +461,21 @@ class MasterDetailConfig {
 
   /// Master width for [available]. Only call it when [fits].
   ///
-  /// [fraction] is the user's dragged share; `null` falls back to [paneRatio].
-  /// Both go through [clampMasterWidth] — a hand-picked width obeys the same
-  /// minimums as a computed one.
+  /// [fraction] is the user's dragged share; without one, [centre] (the
+  /// window centre in pane-area coordinates, for [alignToWindowCenter]) or
+  /// [paneRatio] decides. All go through [clampMasterWidth] — a hand-picked
+  /// width obeys the same minimums as a computed one.
   double masterWidthFor(
     double available, {
     required double gap,
     double? fraction,
+    double? centre,
   }) => clampMasterWidth(
-    available * (fraction ?? paneRatio),
+    fraction != null
+        ? available * fraction
+        : centre != null
+        ? centre - gap / 2
+        : available * paneRatio,
     available,
     gap: gap,
   );
@@ -570,7 +587,11 @@ class AdaptiveShellConfig<R> {
     this.branchFadeDuration = Duration.zero,
     this.immersive,
     this.immersiveDuration = kDefaultImmersiveDuration,
-  });
+    this.backToBranch,
+  }) : assert(
+         backToBranch == null || backToBranch >= 0,
+         'backToBranch must be a branch index',
+       );
 
   final List<BranchConfig<R>> branches;
 
@@ -641,8 +662,9 @@ class AdaptiveShellConfig<R> {
   final PaneDecoration panes;
 
   /// `null` — the divider is fixed and widths follow
-  /// [MasterDetailConfig.paneRatio]. Otherwise the boundary can be dragged and
-  /// the master share comes from the controller.
+  /// [MasterDetailConfig.paneRatio] (or the window centre, with
+  /// [MasterDetailConfig.alignToWindowCenter]). Otherwise the boundary can be
+  /// dragged and the master share comes from the controller.
   ///
   /// A mutable object inside an immutable config, like [scaffoldKey]: the
   /// config holds a reference to something the app owns and never mutates it.
@@ -700,4 +722,13 @@ class AdaptiveShellConfig<R> {
 
   /// The curve stays internal; only the duration is exposed.
   final Duration immersiveDuration;
+
+  /// The branch system back leads to from the root of any other branch — the
+  /// start tab, as in most Android apps. `null` — back at a branch root goes to
+  /// the system.
+  ///
+  /// Dialogs, the drawer, pushed screens and a detail are popped first. The
+  /// root's `onExit` is asked as on a tab tap. Must be an index into
+  /// [branches].
+  final int? backToBranch;
 }
