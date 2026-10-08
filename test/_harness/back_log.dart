@@ -9,10 +9,11 @@ import 'resize.dart';
 Future<List<bool>> pumpBackLog(
   WidgetTester tester,
   DemoHarness h,
-  Size window,
-) async {
+  Size window, {
+  EdgeInsets padding = EdgeInsets.zero,
+}) async {
   addTearDown(tester.view.reset);
-  setWindow(tester, window);
+  setPose(tester, window, padding: padding);
   final List<bool> log = <bool>[];
   await tester.pumpWidget(
     h.app(

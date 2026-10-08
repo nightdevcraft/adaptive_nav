@@ -22,3 +22,5 @@ export 'src/nav_config.dart';
 export 'src/nav_state.dart';
 export 'src/pane_metrics.dart';
 export 'src/pane_split.dart';
+export 'src/status_column.dart';
+export 'src/status_row.dart';

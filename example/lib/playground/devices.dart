@@ -41,6 +41,7 @@ class Pose {
     this.hinge = Hinge.none,
     this.camera = false,
     this.clock = true,
+    this.cornerRow = false,
     this.buttons = const <Bump>[],
     this.punch,
     this.reportsFold = false,
@@ -62,6 +63,10 @@ class Pose {
 
   /// Folded and turned, iPhone Duo shows no clock in its column.
   final bool clock;
+
+  /// Open and upright, iPhone Duo shows the clock and the Wi-Fi ring in the
+  /// top right corner only.
+  final bool cornerRow;
   final List<Bump> buttons;
 
   /// The centre of a punch-hole camera, in display coordinates.
@@ -198,6 +203,7 @@ const Pose duoInnerPortrait = Pose(
   radius: BorderRadius.all(Radius.circular(_duoInnerRadius)),
   bezel: EdgeInsets.all(9),
   hinge: Hinge.centreHorizontal,
+  cornerRow: true,
   buttons: <Bump>[
     Bump(AxisDirection.left, 231, 48),
     Bump(AxisDirection.left, 171, 48),
@@ -620,6 +626,9 @@ class SystemUi extends StatelessWidget {
             top: 0,
             child: _column(),
           )
+        else if (pose.cornerRow)
+          // As in the simulator: 27 to 119 in from the right, centred 48 down.
+          Positioned(right: 27, top: 48 - 22, height: 44, child: _cornerRow())
         else if (p.top >= 20)
           Positioned(left: 0, right: 0, top: 0, height: p.top, child: _bar()),
         if (pose.punch case final Offset c)
@@ -696,6 +705,24 @@ class SystemUi extends StatelessWidget {
       ),
     );
   }
+
+  /// iPhone Duo's inner display upright.
+  Widget _cornerRow() => const Row(
+    children: <Widget>[
+      Text(
+        '9:41',
+        style: TextStyle(
+          color: _ink,
+          fontSize: 16,
+          height: 1.15,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
+        ),
+      ),
+      SizedBox(width: 11),
+      _RingWifi(),
+    ],
+  );
 
   /// iPhone Duo's status bar standing on its end, as the simulator draws it:
   /// the camera at the top, the clock under it and the connection inside the

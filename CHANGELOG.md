@@ -1,3 +1,36 @@
+## 0.13.0
+
+### Breaking
+
+- Below 600 across, without the side insets, a window is always a single
+  screen, whatever `MasterDetailConfig.fits` says (`kCompactWidthBreakpoint`,
+  `PaneMetrics.allowsTwoPanes`). A phone no longer splits over its bar, and a
+  window narrowed through 600 no longer goes back to two panes when the rail
+  gives way to the bar. iPhone Duo's inner display in portrait, 669 across,
+  keeps its two panes.
+
+### Features
+
+- `AdaptiveShellConfig.liftHeadersIntoStatusRow` (experimental, iOS): on
+  iPhone Duo's inner display in portrait the panes' headers move up beside the
+  clock, which takes only the top right corner. The pane under the glyphs
+  reports their width through `StatusRowScope.trailingReserveOf(context)` for
+  the end of its `AppBar` actions. Off by default.
+- `MasterDetailConfig.portraitPaneRatio`: the master's share in a portrait
+  window, ahead of `alignToWindowCenter` and `paneRatio`. The user's drag, a
+  fold and the pane minimums still win.
+- `AdaptiveShellConfig.actionsInStatusColumn` (experimental, iOS): on iPhone
+  Duo's inner display in landscape the empty part of the status column, below
+  the clock, goes to the pane against it (`StatusColumnScope.of(context)`).
+  `StatusColumnActions` moves a screen's header actions there and back with a
+  short fade. Off by default.
+
+### Fixes
+
+- On Android the rail no longer sits under the navigation buttons or a camera
+  cutout on its edge in landscape: its background reaches the edge, its
+  destinations start after the inset (`PaneMetrics.railCutoutInset`).
+
 ## 0.12.0
 
 ### Features

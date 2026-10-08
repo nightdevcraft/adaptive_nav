@@ -7,8 +7,9 @@ nothing remounts.
 
 - **People** is a master-detail branch. Below 540 logical pixels of pane area
   it is a plain stack; above it the list and the person sit side by side, the
-  boundary starts on the window centre (`alignToWindowCenter`) and can be
-  dragged (`PaneSplitController`, with `onCommit` firing on release). The
+  boundary starts at 40 % in portrait (`portraitPaneRatio`) and on the window
+  centre in landscape (`alignToWindowCenter`), and can be dragged
+  (`PaneSplitController`, with `onCommit` firing on release). The
   minimums behind that number are picked so the inner display of an iPhone Duo
   in portrait still splits; the package's own defaults are wider.
 - **Settings** is a plain tab with a switch. Leave the tab and come back — the
@@ -19,6 +20,11 @@ nothing remounts.
   is unsaved. **Archive** and **Trash** ask in a dialog. Together they give the
   chrome more sections than a short rail can hold: fold an iPhone Duo and the
   ones that do not fit move behind the menu button at the end of the rail.
+- On iPhone Duo's inner display the experimental options are on: in portrait
+  the headers sit beside the clock (`liftHeadersIntoStatusRow`; see
+  `PaneAppBar` in `lib/screens.dart`), in landscape the header actions of the
+  person, Starred, a note and Trash move into the status column
+  (`actionsInStatusColumn`, `StatusColumnActions`).
 - System back at the root of any tab but People returns to People
   (`backToBranch: 0`).
 - Picking another person uses `resetDetailTo`, not `push`: a lateral move that
@@ -72,7 +78,9 @@ flutter run -d chrome -t lib/playground.dart
 ```
 
 The page holds a single instance of the app. Switching devices, rotating and
-folding only change its `MediaQuery`, so open screens and their state stay.
+folding only change its `MediaQuery` and the theme's platform (iOS on the
+phone, tablet and iPhone Duo, Android on the Galaxy), so open screens and their
+state stay.
 
 ### iOS 27.1 and iPhone Duo
 

@@ -79,7 +79,9 @@ void main() {
       );
     });
 
-    testWidgets('minimums small enough do split it', (
+    // Below the compact breakpoint a phone is one screen, however low the
+    // minimums: the split over a bar is for a window at least 600 across.
+    testWidgets('minimums small enough still give a stack', (
       WidgetTester tester,
     ) async {
       addTearDown(tester.view.reset);
@@ -94,11 +96,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(NavigationBar), findsOneWidget);
-      final Rect master = tester.getRect(find.byType(DemoListScreen));
-      final Rect detail = tester.getRect(find.byType(DemoDetailScreen));
-      expect(master.overlaps(detail), isFalse);
-      expect(master.left, 0);
-      expect(detail.right, phone.width);
+      expect(
+        tester
+            .getRect(find.byType(DemoDetailScreen))
+            .overlaps(tester.getRect(find.byType(DemoListScreen))),
+        isTrue,
+      );
     });
   });
 

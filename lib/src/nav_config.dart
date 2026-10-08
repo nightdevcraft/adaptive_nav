@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'fold.dart';
 import 'nav_state.dart';
 import 'pane_split.dart';
+import 'status_column.dart';
+import 'status_row.dart';
 
 /// Transition template for a screen.
 ///
@@ -62,8 +64,15 @@ const double kVerticalBarInset = 60;
 /// proportions.
 const double kPhoneStatusBarInset = 50;
 
-/// Rail from 600 logical pixels — the compact/medium boundary of the Material 3
-/// window size classes — with iPhone Duo's postures taken first.
+/// The compact/medium boundary of the Material 3 window size classes, measured
+/// without the side insets.
+///
+/// Wider gets a rail ([defaultChromeLayout]); narrower is always one pane,
+/// whatever [MasterDetailConfig.fits] says.
+const double kCompactWidthBreakpoint = 600;
+
+/// Rail from [kCompactWidthBreakpoint], with iPhone Duo's postures taken
+/// first.
 ///
 /// Three rules, in order:
 ///
@@ -94,7 +103,8 @@ const double kPhoneStatusBarInset = 50;
 /// `chrome_layout_test.dart` pins both: the devices that must not change, and
 /// what a deep top inset does when it turns up.
 ChromePlacement defaultChromeLayout(Size window, EdgeInsets padding) {
-  final bool wide = (window.width - padding.horizontal) >= 600;
+  final bool wide =
+      (window.width - padding.horizontal) >= kCompactWidthBreakpoint;
   final bool barLeft =
       padding.left >= kVerticalBarInset && padding.right < kVerticalBarInset;
   final bool barRight =
@@ -229,6 +239,10 @@ class SystemBarMetrics {
     this.axisFromEdge = 48,
     this.end = defaultSystemBarEnd,
     this.cornerClearance = 16,
+    this.statusRowAxis = 48,
+    this.statusRowTrailing = 120,
+    this.statusColumnTop = 106,
+    this.statusColumnWidth = 72,
   });
 
   /// What was measured: the status glyphs end about 150 points down, and the
@@ -236,6 +250,11 @@ class SystemBarMetrics {
   /// the middle of the 84-point column, which would be 42. In landscape the
   /// outer display hides the clock and only the camera is left, which ends
   /// about 65 points in.
+  ///
+  /// Inner display, portrait: the glyphs are a row in the top right corner,
+  /// from 119.3 points off the right edge, centred 48 down.
+  /// Inner display, landscape: a column on the right, centred 48 in; below
+  /// 104 points down the column is empty and its touches reach the app.
   static const SystemBarMetrics measured = SystemBarMetrics();
 
   /// Treat the column as ordinary space: flush against the edge, no reserve.
@@ -262,6 +281,27 @@ class SystemBarMetrics {
 
   /// Which end [reserve] is kept at.
   final SystemBarEndResolver end;
+
+  /// How far down the glyphs are centred where they are a row in a corner;
+  /// a lifted header is centred on it
+  /// ([AdaptiveShellConfig.liftHeadersIntoStatusRow]).
+  final double statusRowAxis;
+
+  /// How much of the window's width, from its right edge, that row takes.
+  final double statusRowTrailing;
+
+  /// The top inset that centres a header [height] tall on [statusRowAxis],
+  /// kept out of the rounded corner by [cornerClearance].
+  double statusRowTop(double height) =>
+      math.max(cornerClearance, statusRowAxis - height / 2);
+
+  /// Where the empty part of a vertical column starts, from the window's top
+  /// ([AdaptiveShellConfig.actionsInStatusColumn]).
+  final double statusColumnTop;
+
+  /// The width of that part, centred on [axisFromEdge]: 36 either side of a
+  /// line 48 into the 84-point column.
+  final double statusColumnWidth;
 
   /// The line the system centres its glyphs on, measured in from the window
   /// edge. The rail is centred on the same line.
@@ -413,12 +453,18 @@ class MasterDetailConfig {
     this.collapseWhenDetailEmpty = true,
     this.alignToFold = true,
     this.alignToWindowCenter = false,
-  });
+    this.portraitPaneRatio,
+  }) : assert(
+         portraitPaneRatio == null ||
+             (portraitPaneRatio > 0 && portraitPaneRatio < 1),
+         'portraitPaneRatio must be between 0 and 1',
+       );
 
   /// Share of the available width given to the master pane.
   ///
-  /// Overridden by [alignToWindowCenter], by an active fold ([alignToFold])
-  /// and by the user's drag.
+  /// Overridden by [portraitPaneRatio] in a portrait window, by
+  /// [alignToWindowCenter], by an active fold ([alignToFold]) and by the
+  /// user's drag.
   final double paneRatio;
 
   final double masterMinWidth;
@@ -453,6 +499,12 @@ class MasterDetailConfig {
   /// active fold still win, and the pane minimums still apply.
   final bool alignToWindowCenter;
 
+  /// [paneRatio] for a portrait window; `null` keeps [paneRatio] there too.
+  ///
+  /// Wins over [alignToWindowCenter] and [paneRatio]. The user's drag and an
+  /// active fold still win, and the pane minimums still apply.
+  final double? portraitPaneRatio;
+
   /// Whether [available] — the pane width, decoration margins already removed —
   /// fits two unsqueezed panes plus the [gap]. If not, the branch renders as a
   /// compact stack: a detail narrower than its list is worse than no split.
@@ -461,8 +513,9 @@ class MasterDetailConfig {
 
   /// Master width for [available]. Only call it when [fits].
   ///
-  /// [fraction] is the user's dragged share; without one, [centre] (the
-  /// window centre in pane-area coordinates, for [alignToWindowCenter]) or
+  /// [fraction] is the user's dragged share; without one,
+  /// [portraitPaneRatio] in a [portrait] window, then [centre] (the window
+  /// centre in pane-area coordinates, for [alignToWindowCenter]) or
   /// [paneRatio] decides. All go through [clampMasterWidth] — a hand-picked
   /// width obeys the same minimums as a computed one.
   double masterWidthFor(
@@ -470,9 +523,12 @@ class MasterDetailConfig {
     required double gap,
     double? fraction,
     double? centre,
+    bool portrait = false,
   }) => clampMasterWidth(
     fraction != null
         ? available * fraction
+        : portrait && portraitPaneRatio != null
+        ? available * portraitPaneRatio!
         : centre != null
         ? centre - gap / 2
         : available * paneRatio,
@@ -588,6 +644,8 @@ class AdaptiveShellConfig<R> {
     this.immersive,
     this.immersiveDuration = kDefaultImmersiveDuration,
     this.backToBranch,
+    this.liftHeadersIntoStatusRow = false,
+    this.actionsInStatusColumn = false,
   }) : assert(
          backToBranch == null || backToBranch >= 0,
          'backToBranch must be a branch index',
@@ -731,4 +789,38 @@ class AdaptiveShellConfig<R> {
   /// root's `onExit` is asked as on a tab tap. Must be an index into
   /// [branches].
   final int? backToBranch;
+
+  /// Experimental, iOS only: lifts the panes' headers into the status row
+  /// where the glyphs take only its corner — iPhone Duo's inner display in
+  /// portrait.
+  ///
+  /// Each pane hands its screen a top inset that centres a [kToolbarHeight]
+  /// toolbar on the glyphs ([SystemBarMetrics.statusRowTop]). The pane under
+  /// the glyphs reports how much of its trailing end they cover through
+  /// [StatusRowScope.trailingReserveOf]; the screen keeps its actions clear
+  /// with a trailing box that wide, since an `AppBar` lays out its own.
+  ///
+  /// Recognised from `MediaQuery`: a bottom bar, a top inset of at least
+  /// [kPhoneStatusBarInset], no side bar and a portrait window at least
+  /// [kCompactWidthBreakpoint] wide. Elsewhere this changes nothing.
+  ///
+  /// Off by default: a header that is not a [kToolbarHeight] toolbar, or has
+  /// no trailing box, ends up under the clock.
+  final bool liftHeadersIntoStatusRow;
+
+  /// Experimental, iOS only: hands the empty part of the system's vertical
+  /// column, below its glyphs, to the pane against it for its header actions
+  /// — iPhone Duo's inner display in landscape.
+  ///
+  /// The pane whose trailing edge is the window's — the master while it spans
+  /// the width, otherwise the detail — finds that space in
+  /// [StatusColumnScope.of], and [StatusColumnActions] moves the screen's
+  /// actions there from its `AppBar`.
+  ///
+  /// Recognised from `MediaQuery`: a landscape window with a vertical bar on
+  /// the right only and the rail on the left. Elsewhere the scope is `null`
+  /// and the actions stay in the header.
+  ///
+  /// Off by default: iOS apps do not put actions on the trailing edge.
+  final bool actionsInStatusColumn;
 }

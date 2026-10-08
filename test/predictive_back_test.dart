@@ -242,11 +242,25 @@ void main() {
 
   // The drawer sends no `NavigationNotification`; every shell `Scaffold` has one.
   group('the shell drawer', () {
-    for (final (String name, Size window, double paneMin, Type chrome)
-        in <(String, Size, double, Type)>[
-          ('compact', kCompact, 360, NavigationBar),
-          ('compact, two panes over the bar', kCompact, 200, NavigationBar),
-          ('rail', kWide, 360, NavigationRail),
+    for (final (
+          String name,
+          Size window,
+          EdgeInsets padding,
+          double paneMin,
+          Type chrome,
+        )
+        in <(String, Size, EdgeInsets, double, Type)>[
+          ('compact', kCompact, EdgeInsets.zero, 360, NavigationBar),
+          // A bar with two panes over it needs a window at least 600 across,
+          // and a phone-deep top inset to keep the bar there.
+          (
+            'compact, two panes over the bar',
+            kDuoInnerPortrait,
+            kDuoInnerPortraitPadding,
+            200,
+            NavigationBar,
+          ),
+          ('rail', kWide, EdgeInsets.zero, 360, NavigationRail),
         ]) {
       final bool twoPanes = window == kWide || paneMin < 360;
       group(name, () {
@@ -264,7 +278,12 @@ void main() {
             drawerBuilder: (BuildContext _, bool rail) =>
                 const Drawer(child: Text('Menu')),
           );
-          final List<bool> log = await pumpBackLog(tester, h, window);
+          final List<bool> log = await pumpBackLog(
+            tester,
+            h,
+            window,
+            padding: padding,
+          );
           expect(find.byType(chrome), findsOneWidget);
           expect(
             find.text('Pick one'),

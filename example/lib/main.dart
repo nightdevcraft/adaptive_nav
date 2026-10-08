@@ -59,11 +59,13 @@ class _ExampleAppState extends State<ExampleApp> {
             // They also keep the outer display a single stack, which is what
             // Apple asks for: the widest it ever offers is 489.
             //
-            // The boundary starts on the window centre — the hinge, on a Duo.
+            // In portrait the list is a narrow sidebar; in landscape the
+            // boundary starts on the window centre — the hinge, on a Duo.
             masterDetail: const MasterDetailConfig(
               masterMinWidth: 270,
               detailMinWidth: 270,
               alignToWindowCenter: true,
+              portraitPaneRatio: 0.4,
             ),
             // Details fade when they swap the contents of a pane and slide
             // when they take the whole screen, decided as the animation runs.
@@ -101,6 +103,11 @@ class _ExampleAppState extends State<ExampleApp> {
         paneSplit: _paneSplit,
         // Back at another tab's root returns to People.
         backToBranch: 0,
+        // iPhone Duo, inner display: headers beside the clock in portrait
+        // (see `PeopleListScreen`), actions in the status column in landscape
+        // (see `StarredScreen`).
+        liftHeadersIntoStatusRow: true,
+        actionsInStatusColumn: true,
       );
 
   /// The rail (or bar), the master and the detail each get their own shade of
@@ -187,7 +194,8 @@ class _ExampleAppState extends State<ExampleApp> {
       child: MaterialApp.router(
         title: 'adaptive_nav example',
         debugShowCheckedModeBanner: false,
-        theme: _theme,
+        // The playground sets the device's platform in a theme above.
+        theme: _theme.copyWith(platform: Theme.of(context).platform),
         routerDelegate: _delegate,
         routeInformationParser: _parser,
       ),

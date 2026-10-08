@@ -168,6 +168,20 @@ class _PlaygroundState extends State<Playground> with TickerProviderStateMixin {
 
   final ThemeData _theme = ThemeData(colorSchemeSeed: Colors.indigo);
 
+  /// The desktop keeps the browser's platform.
+  late final ThemeData _iosTheme = _theme.copyWith(
+    platform: TargetPlatform.iOS,
+  );
+  late final ThemeData _androidTheme = _theme.copyWith(
+    platform: TargetPlatform.android,
+  );
+
+  ThemeData get _deviceTheme => switch (_device) {
+    Device.desktop => _theme,
+    Device.phone || Device.tablet || Device.duo => _iosTheme,
+    Device.galaxyFold => _androidTheme,
+  };
+
   @override
   void dispose() {
     _fold.dispose();
@@ -288,7 +302,10 @@ class _PlaygroundState extends State<Playground> with TickerProviderStateMixin {
       systemGestureInsets: EdgeInsets.zero,
       displayFeatures: features,
     ),
-    child: SizedBox.fromSize(size: size, child: _app),
+    child: Theme(
+      data: _deviceTheme,
+      child: SizedBox.fromSize(size: size, child: _app),
+    ),
   );
 
   List<HeaderAction> get _actions => <HeaderAction>[

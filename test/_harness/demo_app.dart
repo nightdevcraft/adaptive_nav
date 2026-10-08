@@ -338,6 +338,7 @@ class DemoHarness {
     WidgetBuilder? detailPlaceholder,
     bool alignToFold = true,
     bool alignToWindowCenter = false,
+    double? portraitPaneRatio,
     FoldLocator? foldLocator,
     SystemBarMetrics systemBar = SystemBarMetrics.measured,
     double masterMinWidth = 320,
@@ -350,6 +351,9 @@ class DemoHarness {
     ValueListenable<bool>? immersive,
     Duration immersiveDuration = kDefaultImmersiveDuration,
     int? backToBranch,
+    bool liftHeadersIntoStatusRow = false,
+    bool actionsInStatusColumn = false,
+    this.platform,
     this.wrapPage,
   }) {
     NavEntry<DemoRoute> root(DemoRoute route) =>
@@ -389,6 +393,7 @@ class DemoHarness {
               collapseWhenDetailEmpty: collapseWhenDetailEmpty,
               alignToFold: alignToFold,
               alignToWindowCenter: alignToWindowCenter,
+              portraitPaneRatio: portraitPaneRatio,
             ),
             pageBuilder: _buildPage,
           ),
@@ -428,6 +433,8 @@ class DemoHarness {
         immersive: immersive,
         immersiveDuration: immersiveDuration,
         backToBranch: backToBranch,
+        liftHeadersIntoStatusRow: liftHeadersIntoStatusRow,
+        actionsInStatusColumn: actionsInStatusColumn,
       ),
       initialState: baseState,
     );
@@ -446,6 +453,9 @@ class DemoHarness {
   /// Wraps or replaces the screen built for a route; `null` leaves the
   /// default screens alone.
   final Widget Function(DemoRoute route, Widget screen)? wrapPage;
+
+  /// The theme's platform; `null` leaves the test's default.
+  final TargetPlatform? platform;
 
   Widget _buildPage(DemoRoute route) {
     final Widget screen = switch (route) {
@@ -468,9 +478,10 @@ class DemoHarness {
     child: MaterialApp.router(
       debugShowCheckedModeBanner: false,
       onNavigationNotification: onNavigationNotification,
-      theme: _railLabelStyle == null
+      theme: _railLabelStyle == null && platform == null
           ? null
           : ThemeData(
+              platform: platform,
               navigationRailTheme: NavigationRailThemeData(
                 unselectedLabelTextStyle: _railLabelStyle,
                 selectedLabelTextStyle: _railLabelStyle,

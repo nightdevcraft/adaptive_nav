@@ -1,3 +1,4 @@
+import 'package:adaptive_nav/adaptive_nav.dart';
 import 'package:flutter/material.dart';
 
 import 'data.dart';
@@ -11,7 +12,7 @@ class TeamsListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppScope scope = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Teams')),
+      appBar: const PaneAppBar(title: Text('Teams')),
       body: ListView(
         children: <Widget>[
           for (final Team t in teams)
@@ -35,7 +36,7 @@ class TeamDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final Team team = teamById(id);
     return Scaffold(
-      appBar: AppBar(title: Text(team.name)),
+      appBar: PaneAppBar(title: Text(team.name)),
       body: ListView(
         children: <Widget>[
           for (final String name in team.members)
@@ -84,47 +85,54 @@ class _StarredScreenState extends State<StarredScreen> {
           _scaffold.currentState?.closeDrawer();
         }
       },
-      child: Scaffold(
-        key: _scaffold,
-        appBar: AppBar(
-          title: const Text('Starred'),
-          actions: <Widget>[
-            IconButton(
-              icon: const Icon(Icons.filter_list),
-              tooltip: 'Filters',
-              onPressed: () => _scaffold.currentState?.openDrawer(),
-            ),
-          ],
-        ),
-        drawer: Drawer(
-          child: SafeArea(
-            child: ListView(
-              children: <Widget>[
-                const ListTile(title: Text('Show')),
-                for (final StarredKind kind in StarredKind.values)
-                  CheckboxListTile(
-                    secondary: Icon(_icon(kind)),
-                    title: Text(_label(kind)),
-                    value: _kinds.contains(kind),
-                    onChanged: (bool? on) => setState(
-                      () => on! ? _kinds.add(kind) : _kinds.remove(kind),
+      child: StatusColumnActions(
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filters',
+            onPressed: () => _scaffold.currentState?.openDrawer(),
+          ),
+        ],
+        builder: (BuildContext context, List<Widget> actions) => Scaffold(
+          key: _scaffold,
+          appBar: PaneAppBar(title: const Text('Starred'), actions: actions),
+          drawer: Drawer(
+            child: SafeArea(
+              child: ListView(
+                children: <Widget>[
+                  const ListTile(title: Text('Show')),
+                  for (final StarredKind kind in StarredKind.values)
+                    CheckboxListTile(
+                      secondary: Icon(_icon(kind)),
+                      title: Text(_label(kind)),
+                      value: _kinds.contains(kind),
+                      onChanged: (bool? on) => setState(
+                        () => on! ? _kinds.add(kind) : _kinds.remove(kind),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        onDrawerChanged: (bool open) => setState(() => _drawerOpen = open),
-        body: ListView(
-          children: <Widget>[
-            for (final StarredItem item in starred)
-              if (_kinds.contains(item.kind))
-                ListTile(
-                  leading: Icon(_icon(item.kind)),
-                  title: Text(item.title),
-                  trailing: const Icon(Icons.star),
-                ),
-          ],
+          onDrawerChanged: (bool open) => setState(() => _drawerOpen = open),
+          // The side insets keep the list clear of the status column.
+          body: StatusColumnActions.body(
+            SafeArea(
+              top: false,
+              bottom: false,
+              child: ListView(
+                children: <Widget>[
+                  for (final StarredItem item in starred)
+                    if (_kinds.contains(item.kind))
+                      ListTile(
+                        leading: Icon(_icon(item.kind)),
+                        title: Text(item.title),
+                        trailing: const Icon(Icons.star),
+                      ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -138,7 +146,7 @@ class NotesListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppScope scope = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Recent')),
+      appBar: const PaneAppBar(title: Text('Recent')),
       body: ListView(
         children: <Widget>[
           for (final Note n in notes)
@@ -187,24 +195,35 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
           ).showSnackBar(const SnackBar(content: Text('Unsaved')));
         }
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(noteById(widget.id).title),
-          actions: <Widget>[
-            TextButton(
-              onPressed: _dirty
-                  ? () => setState(() => _saved = _text.text)
-                  : null,
-              child: const Text('Save'),
+      child: StatusColumnActions(
+        actions: <Widget>[
+          TextButton(
+            onPressed: _dirty
+                ? () => setState(() => _saved = _text.text)
+                : null,
+            child: const Text('Save'),
+          ),
+        ],
+        builder: (BuildContext context, List<Widget> actions) => Scaffold(
+          appBar: PaneAppBar(
+            title: Text(noteById(widget.id).title),
+            actions: actions,
+          ),
+          body: StatusColumnActions.body(
+            SafeArea(
+              top: false,
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: TextField(
+                  controller: _text,
+                  maxLines: null,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _text,
-            maxLines: null,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
           ),
         ),
       ),
@@ -248,7 +267,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Archive')),
+      appBar: const PaneAppBar(title: Text('Archive')),
       body: ListView(
         children: <Widget>[
           for (final String item in _items)
@@ -298,24 +317,30 @@ class _TrashScreenState extends State<TrashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Trash'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: _items.isEmpty ? null : _empty,
-            child: const Text('Empty'),
-          ),
-        ],
-      ),
-      body: ListView(
-        children: <Widget>[
-          for (final String item in _items)
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: Text(item),
+    return StatusColumnActions(
+      actions: <Widget>[
+        TextButton(
+          onPressed: _items.isEmpty ? null : _empty,
+          child: const Text('Empty'),
+        ),
+      ],
+      builder: (BuildContext context, List<Widget> actions) => Scaffold(
+        appBar: PaneAppBar(title: const Text('Trash'), actions: actions),
+        body: StatusColumnActions.body(
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: ListView(
+              children: <Widget>[
+                for (final String item in _items)
+                  ListTile(
+                    leading: const Icon(Icons.description_outlined),
+                    title: Text(item),
+                  ),
+              ],
             ),
-        ],
+          ),
+        ),
       ),
     );
   }

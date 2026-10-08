@@ -10,6 +10,8 @@ import 'nav_config.dart';
 import 'nav_state.dart';
 import 'pane_metrics.dart';
 import 'pane_split.dart';
+import 'status_column.dart';
+import 'status_row.dart';
 
 /// Stable keys for one branch's navigators, held by the delegate.
 ///
@@ -252,7 +254,86 @@ class AdaptiveShell<R> extends StatelessWidget {
       context,
       window: window.width,
       padding: padding,
+      statusRow: _statusRow(Theme.of(context).platform, window, padding),
       foldHint: foldHint,
+    );
+  }
+
+  /// The top inset for lifted headers and where the glyphs start across the
+  /// window; `null` where headers are not lifted.
+  ///
+  /// A phone in portrait is narrower than the breakpoint, with its glyphs on
+  /// both sides of the cutout. iOS only: Android puts the clock at the left
+  /// end of the row, where the master's header would go.
+  ({double top, double start})? _statusRow(
+    TargetPlatform platform,
+    Size window,
+    EdgeInsets padding,
+  ) {
+    if (!shellConfig.liftHeadersIntoStatusRow ||
+        platform != TargetPlatform.iOS ||
+        padding.top < kPhoneStatusBarInset ||
+        padding.left >= kVerticalBarInset ||
+        padding.right >= kVerticalBarInset ||
+        window.width > window.height ||
+        window.width - padding.horizontal < kCompactWidthBreakpoint) {
+      return null;
+    }
+    final SystemBarMetrics bar = shellConfig.systemBar;
+    return (
+      top: math.min(padding.top, bar.statusRowTop(kToolbarHeight)),
+      start: window.width - bar.statusRowTrailing,
+    );
+  }
+
+  /// How much of a pane from [left] to [right] the glyphs from [start] cover.
+  /// [end] is as far as any pane reaches, so a pane off screen is not covered.
+  static double _statusRowOverlap(
+    double left,
+    double right, {
+    required double start,
+    required double end,
+  }) => math.max(0.0, math.min(right, end) - math.max(left, start));
+
+  /// Always in the tree, lifted or not, so turning the device keeps the
+  /// branch navigators' state.
+  Widget _statusRowPane({
+    required double? top,
+    required double reserve,
+    required Widget child,
+  }) => StatusRowScope(
+    trailingReserve: reserve,
+    child: Builder(
+      builder: (BuildContext inner) =>
+          _paneInsets(inner, top: top, child: child),
+    ),
+  );
+
+  /// The empty part of the system's vertical column in window coordinates;
+  /// `null` where the actions stay in the headers. iOS only, where it was
+  /// measured.
+  Rect? _statusColumn(
+    TargetPlatform platform,
+    Size window,
+    EdgeInsets padding,
+    ChromePlacement placement,
+  ) {
+    if (!shellConfig.actionsInStatusColumn ||
+        platform != TargetPlatform.iOS ||
+        placement != ChromePlacement.left ||
+        padding.right < kVerticalBarInset ||
+        padding.left >= kVerticalBarInset ||
+        window.width <= window.height) {
+      return null;
+    }
+    final SystemBarMetrics bar = shellConfig.systemBar;
+    final double axis = window.width - bar.axisFromEdge;
+    return Rect.fromLTRB(
+      axis - bar.statusColumnWidth / 2,
+      bar.statusColumnTop,
+      axis + bar.statusColumnWidth / 2,
+      // Clear of the home indicator.
+      window.height - padding.bottom,
     );
   }
 
@@ -271,10 +352,13 @@ class AdaptiveShell<R> extends StatelessWidget {
     BuildContext context, {
     required double window,
     required EdgeInsets padding,
+    ({double top, double start})? statusRow,
     Rect? foldHint,
   }) {
     final MasterDetailConfig? md =
-        shellConfig.branches[state.activeBranch].masterDetail;
+        PaneMetrics.allowsTwoPanes(window: window, padding: padding)
+        ? shellConfig.branches[state.activeBranch].masterDetail
+        : null;
     final PaneDecoration panes = shellConfig.panes;
     final double paneArea = PaneMetrics.paneAreaWidth(
       window: window,
@@ -311,7 +395,10 @@ class AdaptiveShell<R> extends StatelessWidget {
           // below it *plus* the margin leaves a band that deep unused.
           child: _paneInsets(
             context,
-            top: math.max(0.0, padding.top - panes.margin.top),
+            top: math.max(
+              0.0,
+              (statusRow?.top ?? padding.top) - panes.margin.top,
+            ),
             child: Builder(
               builder: (BuildContext inner) => _inPaneArea(
                 panes: panes,
@@ -322,6 +409,13 @@ class AdaptiveShell<R> extends StatelessWidget {
                   underlap,
                   underlap.left + panes.margin.left,
                   foldHint,
+                  // In the panes' `Stack`, which spans the margins.
+                  statusRow: statusRow == null
+                      ? null
+                      : (
+                          start: statusRow.start - panes.margin.left,
+                          end: window - panes.margin.horizontal,
+                        ),
                 ),
               ),
             ),
@@ -330,7 +424,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         bottomNavigationBar: _barWidget(context),
       );
     }
-    return _buildStack(context);
+    return _buildStack(context, window: window, statusRow: statusRow);
   }
 
   /// bar, one pane: master in the body and the detail overlaying the bar.
@@ -339,7 +433,14 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// One caveat: the detail layer is a sibling above it, so a non-empty detail
   /// covers an open drawer. In the root states, where a drawer is opened, the
   /// detail is empty and transparent.
-  Widget _buildStack(BuildContext context) {
+  Widget _buildStack(
+    BuildContext context, {
+    required double window,
+    ({double top, double start})? statusRow,
+  }) {
+    final double reserve = statusRow == null
+        ? 0
+        : _statusRowOverlap(0, window, start: statusRow.start, end: window);
     return Stack(
       children: <Widget>[
         Scaffold(
@@ -348,7 +449,12 @@ class AdaptiveShell<R> extends StatelessWidget {
           onDrawerChanged: onDrawerChanged,
           resizeToAvoidBottomInset: false, // see the rail `Scaffold` below
           extendBody: shellConfig.extendBodyBehindBar,
-          body: _mastersStack(),
+          // Inside the body, so the drawer keeps the whole inset.
+          body: _statusRowPane(
+            top: statusRow?.top,
+            reserve: reserve,
+            child: _mastersStack(),
+          ),
           bottomNavigationBar: _barWidget(context),
         ),
         Positioned.fill(
@@ -356,7 +462,11 @@ class AdaptiveShell<R> extends StatelessWidget {
             // An empty detail is transparent and lets taps through to the bar
             // and the master.
             ignoring: _activeDetailEmpty,
-            child: _detailsStack(inPane: false),
+            child: _statusRowPane(
+              top: statusRow?.top,
+              reserve: reserve,
+              child: _detailsStack(inPane: false),
+            ),
           ),
         ),
       ],
@@ -427,16 +537,25 @@ class AdaptiveShell<R> extends StatelessWidget {
     final double edgeGap = systemBar > 0
         ? shellConfig.systemBar.edgeGap(shellConfig.railWidth)
         : 0;
+    // Unlike the system's column, a cutout is not joined: the rail grows by
+    // it.
+    final double cutout = railWidget == null
+        ? 0
+        : PaneMetrics.railCutoutInset(padding: padding, placement: placement);
     final double railRegion = railWidget == null
         ? 0
         : PaneMetrics.railColumnWidth(
             railWidth: shellConfig.railWidth,
             systemBar: systemBar,
             edgeGap: edgeGap,
+            cutout: cutout,
             rail: rail,
           );
+    // A side bar or a custom layout can put a rail below the breakpoint.
     final MasterDetailConfig? md =
-        shellConfig.branches[state.activeBranch].masterDetail;
+        PaneMetrics.allowsTwoPanes(window: window, padding: padding)
+        ? shellConfig.branches[state.activeBranch].masterDetail
+        : null;
     return Scaffold(
       key: shellConfig.scaffoldKey,
       drawer: _drawer(context, rail: true),
@@ -472,12 +591,19 @@ class AdaptiveShell<R> extends StatelessWidget {
               placement: placement,
               systemBar: systemBar,
               edgeGap: edgeGap,
+              cutout: cutout,
               reserve: railWidget == null ? 0 : reserveIfShown,
               reserveEnd: reserveEnd,
               railTop: railWidget == null
                   ? 0
                   : math.max(0.0, padding.top - rail.margin.top),
               foldHint: foldHint,
+              statusColumn: _statusColumn(
+                Theme.of(context).platform,
+                MediaQuery.sizeOf(context),
+                padding,
+                placement,
+              ),
             ),
           ),
         ),
@@ -500,10 +626,12 @@ class AdaptiveShell<R> extends StatelessWidget {
     required ChromePlacement placement,
     required double systemBar,
     required double edgeGap,
+    required double cutout,
     required double reserve,
     required SystemBarEnd reserveEnd,
     required double railTop,
     required Rect? foldHint,
+    required Rect? statusColumn,
   }) {
     final ValueListenable<bool>? immersive = shellConfig.immersive;
     if (immersive == null) {
@@ -520,10 +648,12 @@ class AdaptiveShell<R> extends StatelessWidget {
         placement: placement,
         systemBar: systemBar,
         edgeGap: edgeGap,
+        cutout: cutout,
         reserve: reserve,
         reserveEnd: reserveEnd,
         railTop: railTop,
         foldHint: foldHint,
+        statusColumn: statusColumn,
         progress: 1,
         immersive: false,
       );
@@ -552,10 +682,12 @@ class AdaptiveShell<R> extends StatelessWidget {
                   placement: placement,
                   systemBar: systemBar,
                   edgeGap: edgeGap,
+                  cutout: cutout,
                   reserve: reserve,
                   reserveEnd: reserveEnd,
                   railTop: railTop,
                   foldHint: foldHint,
+                  statusColumn: statusColumn,
                   progress: progress,
                   immersive: true,
                 ),
@@ -584,10 +716,12 @@ class AdaptiveShell<R> extends StatelessWidget {
     required ChromePlacement placement,
     required double systemBar,
     required double edgeGap,
+    required double cutout,
     required double reserve,
     required SystemBarEnd reserveEnd,
     required double railTop,
     required Rect? foldHint,
+    required Rect? statusColumn,
     required double progress,
     required bool immersive,
   }) {
@@ -606,6 +740,12 @@ class AdaptiveShell<R> extends StatelessWidget {
         (onLeft ? railRegion * (immersive ? progress : 1) : 0) +
         panes.margin.left +
         underlap.left;
+    // Into the panes' coordinates: they start at the top margin and bleed
+    // under the left inset.
+    final Rect? paneColumn = statusColumn?.translate(
+      underlap.left - origin,
+      -panes.margin.top,
+    );
     // The region is fixed at the declared width. Panes are laid out with
     // absolute numbers, so what the rail occupies has to be right by
     // construction: a rail growing with the length of its labels would eat
@@ -615,7 +755,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     // over that goes on the inner side instead, against the panes.
     final double slack = math.max(
       0.0,
-      railRegion - rail.regionWidth(shellConfig.railWidth) - edgeGap,
+      railRegion - rail.regionWidth(shellConfig.railWidth) - edgeGap - cutout,
     );
     // [edgeGap] sits between the rail and the window edge. A flush rail
     // paints it in its own colour, otherwise it shows up as a strip of
@@ -638,6 +778,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           region: railRegion,
           progress: progress,
           onLeft: onLeft,
+          cutout: cutout,
           reserve: reserve,
           reserveEnd: reserveEnd,
           top: railTop,
@@ -652,6 +793,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           railWidget: railWidget,
           rail: rail,
           onLeft: onLeft,
+          cutout: cutout,
           reserve: reserve,
           reserveEnd: reserveEnd,
           top: railTop,
@@ -675,8 +817,16 @@ class AdaptiveShell<R> extends StatelessWidget {
           panes: panes,
           // Threshold from the frozen width, widths from the live one.
           child: md != null && md.fits(paneArea, gap: panes.gap)
-              ? _twoPanes(context, md, livePaneArea, underlap, origin, foldHint)
-              : _singlePanel(context, underlap),
+              ? _twoPanes(
+                  context,
+                  md,
+                  livePaneArea,
+                  underlap,
+                  origin,
+                  foldHint,
+                  statusColumn: paneColumn,
+                )
+              : _singlePanel(context, underlap, statusColumn: paneColumn),
         ),
       ),
     );
@@ -704,16 +854,21 @@ class AdaptiveShell<R> extends StatelessWidget {
     required SystemBarEnd end,
     required double top,
     required Widget child,
+    double cutout = 0,
+    bool onLeft = true,
   }) {
-    if (reserve <= 0 && top <= 0) {
+    if (reserve <= 0 && top <= 0 && cutout <= 0) {
       return child;
     }
     return ColoredBox(
       color: _railColor(context, rail),
       child: Padding(
-        padding: end == SystemBarEnd.top
-            ? EdgeInsets.only(top: top + reserve)
-            : EdgeInsets.only(top: top, bottom: reserve),
+        padding: EdgeInsets.only(
+          left: onLeft ? cutout : 0,
+          right: onLeft ? 0 : cutout,
+          top: end == SystemBarEnd.top ? top + reserve : top,
+          bottom: end == SystemBarEnd.top ? 0 : reserve,
+        ),
         child: child,
       ),
     );
@@ -733,13 +888,15 @@ class AdaptiveShell<R> extends StatelessWidget {
     required Widget railWidget,
     required RailDecoration rail,
     required bool onLeft,
+    double cutout = 0,
     double reserve = 0,
     SystemBarEnd reserveEnd = SystemBarEnd.top,
     double top = 0,
   }) {
     return SizedBox(
       // The margin goes outside, so `railWidth` stays the width of the widget.
-      width: shellConfig.railWidth + rail.margin.horizontal,
+      // A [cutout] goes inside the card, under its background.
+      width: shellConfig.railWidth + cutout + rail.margin.horizontal,
       child: Padding(
         padding: rail.margin,
         child: _card(
@@ -750,10 +907,11 @@ class AdaptiveShell<R> extends StatelessWidget {
           // Material's `NavigationRail` carries a `SafeArea`, and in landscape
           // on a notched phone that inset is most of the declared width: the
           // region keeps its size while the destinations are squeezed into
-          // what is left. The rail covers what is on its own edge rather than
-          // growing by it — on iPhone Duo that edge is the system's vertical
-          // bar — so the inset is not its business. The top inset is already
-          // reserved by `_railSurface`, so it is removed here too.
+          // what is left. On iPhone Duo that edge is the system's vertical bar,
+          // which the rail joins; a cutout is reserved by `_railSurface`
+          // instead, which paints under it. Either way the inset is not the
+          // rail's business. The top inset is already reserved by
+          // `_railSurface`, so it is removed here too.
           child: MediaQuery.removePadding(
             context: context,
             removeLeft: onLeft,
@@ -762,6 +920,8 @@ class AdaptiveShell<R> extends StatelessWidget {
             child: _railSurface(
               context,
               rail: rail,
+              cutout: cutout,
+              onLeft: onLeft,
               reserve: reserve,
               end: reserveEnd,
               top: top,
@@ -784,6 +944,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required double region,
     required double progress,
     required bool onLeft,
+    double cutout = 0,
     double reserve = 0,
     SystemBarEnd reserveEnd = SystemBarEnd.top,
     double top = 0,
@@ -807,6 +968,7 @@ class AdaptiveShell<R> extends StatelessWidget {
                 railWidget: railWidget,
                 rail: rail,
                 onLeft: onLeft,
+                cutout: cutout,
                 reserve: reserve,
                 reserveEnd: reserveEnd,
                 top: top,
@@ -937,22 +1099,30 @@ class AdaptiveShell<R> extends StatelessWidget {
 
   /// medium, and expanded with a collapsed empty detail — there the top layer
   /// is transparent and the master shows through at full width.
-  Widget _singlePanel(BuildContext context, PaneUnderlap underlap) {
+  Widget _singlePanel(
+    BuildContext context,
+    PaneUnderlap underlap, {
+    Rect? statusColumn,
+  }) {
     return _paneInsets(
       context,
       left: underlap.left,
       right: underlap.right,
-      child: _paneCard(
-        context,
-        Stack(
-          children: <Widget>[
-            _mastersStack(),
-            IgnorePointer(
-              ignoring: _activeDetailEmpty,
-              // Same presentation as compact, so the same platform transition.
-              child: _detailsStack(inPane: false),
-            ),
-          ],
+      child: StatusColumnScope(
+        column: statusColumn,
+        child: _paneCard(
+          context,
+          Stack(
+            children: <Widget>[
+              _mastersStack(),
+              IgnorePointer(
+                ignoring: _activeDetailEmpty,
+                // Same presentation as compact, so the same platform
+                // transition.
+                child: _detailsStack(inPane: false),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -968,8 +1138,10 @@ class AdaptiveShell<R> extends StatelessWidget {
     double width,
     PaneUnderlap underlap,
     double origin,
-    Rect? foldHint,
-  ) {
+    Rect? foldHint, {
+    ({double start, double end})? statusRow,
+    Rect? statusColumn,
+  }) {
     // The platform first; the app's own answer only fills the silence.
     final PaneFold? fold = md.alignToFold
         ? FoldMetrics.paneFold(
@@ -983,19 +1155,42 @@ class AdaptiveShell<R> extends StatelessWidget {
                 paneArea: width,
               )
         : null;
+    final Size window = MediaQuery.sizeOf(context);
     final double? centre = md.alignToWindowCenter
-        ? MediaQuery.sizeOf(context).width / 2 - origin
+        ? window.width / 2 - origin
         : null;
+    final bool portrait = window.height > window.width;
     final PaneSplitController? split = shellConfig.paneSplit;
     if (split == null) {
-      return _resizablePanes(context, md, width, underlap, fold, centre, null);
+      return _resizablePanes(
+        context,
+        md,
+        width,
+        underlap,
+        fold,
+        centre,
+        portrait,
+        null,
+        statusRow,
+        statusColumn,
+      );
     }
     // Only this subtree rebuilds on a drag; the delegate knows nothing about
     // it.
     return ListenableBuilder(
       listenable: split,
-      builder: (BuildContext context, Widget? _) =>
-          _resizablePanes(context, md, width, underlap, fold, centre, split),
+      builder: (BuildContext context, Widget? _) => _resizablePanes(
+        context,
+        md,
+        width,
+        underlap,
+        fold,
+        centre,
+        portrait,
+        split,
+        statusRow,
+        statusColumn,
+      ),
     );
   }
 
@@ -1023,7 +1218,10 @@ class AdaptiveShell<R> extends StatelessWidget {
     PaneUnderlap underlap,
     PaneFold? fold,
     double? centre,
+    bool portrait,
     PaneSplitController? split,
+    ({double start, double end})? statusRow,
+    Rect? statusColumn,
   ) {
     final PaneDecoration panes = shellConfig.panes;
     final Object branchId = shellConfig.branches[state.activeBranch].id;
@@ -1039,6 +1237,7 @@ class AdaptiveShell<R> extends StatelessWidget {
             gap: gap,
             fraction: split?.fractionOf(branchId),
             centre: centre,
+            portrait: portrait,
           );
     final bool collapsed = md.collapseWhenDetailEmpty && _activeDetailEmpty;
     // Physical: what the `Stack` below actually spans.
@@ -1056,6 +1255,8 @@ class AdaptiveShell<R> extends StatelessWidget {
         split: area + (boundary - area) * reveal,
         detailWidth: area - boundary - gap,
         collapsed: collapsed,
+        statusRow: statusRow,
+        statusColumn: statusColumn,
         // While the fold holds the boundary there is nothing to drag: the
         // hinge decided.
         handle: split == null || collapsed || onFold
@@ -1067,6 +1268,7 @@ class AdaptiveShell<R> extends StatelessWidget {
                 branchId: branchId,
                 available: width,
                 centre: centre,
+                portrait: portrait,
               ),
       ),
     );
@@ -1079,6 +1281,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     required Object branchId,
     required double available,
     required double? centre,
+    required bool portrait,
   }) {
     // Nothing to move: at the threshold width both panes are at their minimums.
     if (!md.isResizable(available, gap: panes.gap)) {
@@ -1094,6 +1297,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         gap: panes.gap,
         fraction: split.fractionOf(branchId),
         centre: centre,
+        portrait: portrait,
       );
       split.drag(
         branchId,
@@ -1121,8 +1325,22 @@ class AdaptiveShell<R> extends StatelessWidget {
     required double split,
     required double detailWidth,
     required bool collapsed,
+    ({double start, double end})? statusRow,
+    Rect? statusColumn,
     Widget? handle,
   }) {
+    // From [split], so the reserve follows a drag and the sliding detail.
+    double reserve(double left, double right) => statusRow == null
+        ? 0
+        : _statusRowOverlap(
+            left,
+            right,
+            start: statusRow.start,
+            end: statusRow.end,
+          );
+    // The column belongs to whichever pane its line runs through.
+    final bool masterHasColumn =
+        statusColumn != null && statusColumn.center.dx < split;
     return Stack(
       clipBehavior: Clip.hardEdge,
       children: <Widget>[
@@ -1138,7 +1356,13 @@ class AdaptiveShell<R> extends StatelessWidget {
             context,
             left: underlap.left,
             right: collapsed ? underlap.right : 0,
-            child: _paneCard(context, _mastersStack()),
+            child: StatusRowScope(
+              trailingReserve: reserve(0, split),
+              child: StatusColumnScope(
+                column: masterHasColumn ? statusColumn : null,
+                child: _paneCard(context, _mastersStack()),
+              ),
+            ),
           ),
         ),
         Positioned(
@@ -1152,14 +1376,22 @@ class AdaptiveShell<R> extends StatelessWidget {
             context,
             left: 0,
             right: underlap.right,
-            child: _paneCard(
-              context,
-              Stack(
-                children: <Widget>[
-                  if (_activeDetailEmpty && !collapsed)
-                    Positioned.fill(child: _detailPlaceholder(context)),
-                  _detailsStack(inPane: true),
-                ],
+            child: StatusRowScope(
+              trailingReserve: reserve(split + gap, split + gap + detailWidth),
+              child: StatusColumnScope(
+                column: statusColumn == null || masterHasColumn
+                    ? null
+                    : statusColumn.translate(-(split + gap), 0),
+                child: _paneCard(
+                  context,
+                  Stack(
+                    children: <Widget>[
+                      if (_activeDetailEmpty && !collapsed)
+                        Positioned.fill(child: _detailPlaceholder(context)),
+                      _detailsStack(inPane: true),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

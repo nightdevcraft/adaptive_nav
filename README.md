@@ -12,6 +12,11 @@ move between the layouts under stable `GlobalKey`s.
 The package is generic over your route type `R` and knows nothing about your
 screens. You supply the branches, the `R ↔ URL` codec and the guards.
 
+> **Status.** The package runs in production in the author's own apps, so it
+> is under active development. Until 1.0 a minor version may break the API;
+> every such change is listed under `### Breaking` in the
+> [CHANGELOG](CHANGELOG.md).
+
 > **Ready for iPhone Duo.** On the outer display the rail moves into the
 > system's own column, under the camera, and follows it as the phone turns; the
 > inner display gets two panes, with a rail in landscape and a bottom bar in
@@ -28,7 +33,7 @@ rotate, and on iPhone Duo and Galaxy Z Fold8 you can fold.
 
 ```yaml
 dependencies:
-  adaptive_nav: ^0.12.0
+  adaptive_nav: ^0.13.0
 ```
 
 ## Quick start
@@ -137,6 +142,11 @@ the detail both fit at their minimum widths, with the decoration's margins, the
 gap and any safe-area inset the panes only bleed under already subtracted. A
 wide window with a narrow content area therefore stays single-pane, which is
 the right answer.
+
+Below 600 across (`kCompactWidthBreakpoint`, without the side insets) a branch
+is always one pane, whatever the minimums. Otherwise a narrowing window would
+drop to one pane beside the rail and jump back to two as soon as the bar
+replaced it and gave its width back.
 
 `PaneMetrics` is that arithmetic, exported so an app that decides "is this the
 wide layout" for itself arrives at the same number:
@@ -310,8 +320,10 @@ subtract the same values.
 
 The boundary sits at `MasterDetailConfig.paneRatio` of the pane area.
 `alignToWindowCenter: true` puts it on the window's horizontal centre instead,
-so a rail on the left comes out of the master's half. The user's drag and an
-active fold ([Half open](#half-open)) still win, and so do the pane minimums.
+so a rail on the left comes out of the master's half. `portraitPaneRatio`
+replaces both in a portrait window — a narrow list there, the centre in
+landscape. The user's drag and an active fold ([Half open](#half-open)) still
+win, and so do the pane minimums.
 
 Pass a `PaneSplitController` and the boundary becomes draggable, per branch,
 clamped by both panes' minimum widths. The controller is owned by the app, so
@@ -335,7 +347,7 @@ two-pane threshold mid-animation.
 
 ## What screens can read
 
-Two inherited scopes let your screens adapt without recomputing the layout:
+Inherited scopes let your screens adapt without recomputing the layout:
 
 - `DetailEntryScope.isDetailRoot(context)` — this screen is the branch's first
   detail. In the wide layout it fills the pane, so its app bar should offer a
@@ -346,6 +358,9 @@ Two inherited scopes let your screens adapt without recomputing the layout:
   `DetailPaneScope.isFullScreen(context)` — it is a detail shown across the
   whole area. On compact a detail covers the navigation bar, so its bottom edge
   becomes its own responsibility.
+- `StatusRowScope.trailingReserveOf(context)` and `StatusColumnScope.of(context)`
+  — for the experimental iPhone Duo options, see
+  [Inner display](#inner-display).
 
 `AppTransition.adaptive` uses the same signal: a detail fades when it swaps the
 contents of a pane and gets the platform slide when it takes the whole screen —
@@ -443,21 +458,80 @@ device alone. The pane cards run up under the status bar and the top inset is
 reserved once for the whole layout, so its 82 points cost the panes nothing but
 the card's margin.
 
+#### Experimental: headers in the status row
+
+In portrait the top inset spans the whole width, but the clock takes only the
+top right corner. `AdaptiveShellConfig.liftHeadersIntoStatusRow` (off by
+default, iOS only) lifts the panes' headers beside it, as Safari does: each
+screen gets a top inset of 20 instead of 82, and the pane under the glyphs
+learns their width from `StatusRowScope.trailingReserveOf(context)` — zero
+everywhere else.
+The screen ends its `AppBar` actions with a box that wide, and moves the title
+to the start where it would drift towards the clock:
+
+```dart
+final double reserve = StatusRowScope.trailingReserveOf(context);
+AppBar(
+  title: const Text('Trash'),
+  // paneWidth: the screen's width, e.g. from a LayoutBuilder.
+  centerTitle: reserve == 0 ? null : paneWidth - 2 * reserve >= 240,
+  actions: <Widget>[
+    TextButton(onPressed: empty, child: const Text('Empty')),
+    SizedBox(width: reserve),
+  ],
+)
+```
+
+A header that is not a 56-point toolbar, or has no trailing box, ends up under
+the clock. The geometry is `SystemBarMetrics.statusRowAxis` (48) and
+`statusRowTrailing` (120), measured on the simulator.
+
+#### Experimental: actions in the status column
+
+In landscape the glyphs are a column on the right again, empty below them.
+`AdaptiveShellConfig.actionsInStatusColumn` (off by default, iOS only) hands
+that space to the pane against it, and `StatusColumnActions` moves a screen's
+header actions there and back as the column comes and goes. The buttons stand
+in the `body`, so the screen's drawer and sheets cover them:
+
+```dart
+StatusColumnActions(
+  actions: <Widget>[
+    TextButton(onPressed: empty, child: const Text('Empty')),
+  ],
+  builder: (BuildContext context, List<Widget> actions) => Scaffold(
+    appBar: AppBar(title: const Text('Trash'), actions: actions),
+    // The side insets keep the list clear of the column.
+    body: StatusColumnActions.body(
+      SafeArea(top: false, bottom: false, child: list),
+    ),
+  ),
+)
+```
+
+The body is assumed to start under a standard `AppBar`; a debug build reports
+one that does not. The column itself is `StatusColumnScope.of(context)`, and
+its geometry `SystemBarMetrics.statusColumnTop` (106) and `statusColumnWidth`
+(72). iOS apps do not put actions on the trailing edge — Apple's own leave the
+column empty — so this is off by default too.
+
 ### What it means for an app
 
 - **Nothing changes on any other device.** All of the above applies only where
   one side of the window has a vertical bar of 60 points or more and the other
   does not. A notched iPhone in landscape has large horizontal insets, but
   symmetric ones; a display cutout or Android's navigation buttons are
-  one-sided but far narrower. `chrome_layout_test.dart` and
-  `duo_poses_test.dart` pin every phone, tablet and desktop case to the layout
-  the package always gave it.
+  one-sided but far narrower; the rail moves its destinations past them. An
+  iPhone in landscape reports the Dynamic Island on both sides, so its rail
+  stays against the edge. `chrome_layout_test.dart` and `duo_poses_test.dart`
+  pin every phone, tablet and desktop case to the layout the package always
+  gave it.
 - **The inner display in portrait needs smaller minimums.** It is the roomiest
   posture — no rail takes a share, so all 669 points go to the panes — but the
   defaults ask for 680. Pick `masterMinWidth` and `detailMinWidth` that fit,
   the way [`example/`](example) does with 270 and 270, or accept a single stack
-  there. Values that fit 669 still leave the outer display a single stack,
-  which is what Apple asks for.
+  there. The outer display is under 600 across, so it stays a stack whatever
+  the minimums, as Apple asks.
 - **Build against the iOS 27.1 SDK.** Older SDKs put the app in a compatibility
   box (375 × 667) on both displays, so none of the above applies and nothing
   can be tested.

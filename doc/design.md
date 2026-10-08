@@ -101,6 +101,13 @@ Two states would be simpler and wrong: a wide window with a narrow content area
 has room for a rail but not for two unsqueezed panes. The chrome threshold is a
 breakpoint; the pane count is `MasterDetailConfig.fits`.
 
+Below the breakpoint, though, a branch is one pane whatever `fits` says. The
+two decisions were independent there too, and that made the pane count jump:
+with minimums that fit beside a bar but not beside a rail, a narrowing window
+went to one pane as it crossed 600 and back to two the moment the bar replaced
+the rail and handed its width to the panes. Tying both to the same 600 keeps
+the layout moving one way as the window narrows.
+
 The separation turned out to be load-bearing. iPhone Duo's inner display in
 portrait wants a bottom bar *and* two panes, which the table above never
 produces — every wide layout in it has a rail. Because the two decisions were
@@ -192,7 +199,8 @@ Sharing rather than stacking also settles the pane count without a rule about
 displays. The outer display gives up 84 points to the column and keeps 382 in
 portrait and 594 in landscape, both below any minimum wide enough to split the
 inner display's 669 — so the outer display collapses to a single pane on its
-own, which is what Apple asks for.
+own, which is what Apple asks for. Being under 600 across, it would stay a
+stack anyway.
 
 The inner display in landscape is the other case, and it does not follow the
 bar. There is room for the rail and both panes in the arrangement they have on
@@ -200,6 +208,26 @@ every other device, and moving the rail to the trailing edge for one posture
 would make the layout jump as the device unfolds. So the rail leads, and the
 detail pane bleeds under the system bar on the far edge like any other inset —
 which is what the underlap arithmetic above is for.
+
+### The status row and column on the inner display
+
+Both are experimental, off by default and iOS only, since the geometry was
+measured on the iOS simulator (Xcode 27.1) and nothing reports it.
+
+In portrait the 82-point top inset spans the width, but the glyphs are a row
+in the top right corner: from 119.3 points off the right edge, centred 48 down.
+`liftHeadersIntoStatusRow` hands each pane a top inset of 20, which centres a
+56-point toolbar on that line, and tells the pane under the glyphs their width.
+It cannot keep an `AppBar`'s actions clear of them itself, which is why the
+screen gets `StatusRowScope` rather than a finished layout. Android puts its
+clock at the left end of the row, so the option does nothing there.
+
+In landscape the glyphs are a column on the right again, centred 48 in, and
+below 104 points down the column is empty and its touches reach the app.
+`actionsInStatusColumn` hands that space, 72 wide from 106 down, to the pane
+whose trailing edge is the window's. `StatusColumnActions` draws the buttons in
+the screen's `body` rather than in an overlay, so the screen's own drawer and
+sheets still cover them.
 
 ## Transitions follow the layout, not the push
 

@@ -73,8 +73,43 @@ abstract final class PaneMetrics {
     return own >= kVerticalBarInset && other < kVerticalBarInset ? own : 0;
   }
 
+  /// An inset on [placement]'s side wider than the opposite one that is not
+  /// the system's vertical bar: Android's navigation buttons or a camera
+  /// cutout in landscape. The rail grows by it ([railColumnWidth]).
+  ///
+  /// Symmetric insets count as zero: a landscape iPhone reports the Dynamic
+  /// Island on both sides, so the rail would move over for nothing half the
+  /// time.
+  static double railCutoutInset({
+    required EdgeInsets padding,
+    required ChromePlacement placement,
+  }) {
+    if (systemBarInset(padding: padding, placement: placement) > 0) {
+      return 0;
+    }
+    final (double own, double other) = switch (placement) {
+      ChromePlacement.left => (padding.left, padding.right),
+      ChromePlacement.right => (padding.right, padding.left),
+      ChromePlacement.bottom => (0.0, 0.0),
+    };
+    return own > other + _symmetryTolerance ? own : 0;
+  }
+
+  /// How far apart the two side insets may be and still count as symmetric.
+  static const double _symmetryTolerance = 2;
+
+  /// Whether the window is wide enough for two panes at all: the rail's
+  /// [kCompactWidthBreakpoint]. [MasterDetailConfig.fits] still has to agree.
+  ///
+  /// Otherwise, just under the breakpoint the bar hands the rail's width back
+  /// to the panes and a second pane reappears as the window narrows.
+  static bool allowsTwoPanes({
+    required double window,
+    required EdgeInsets padding,
+  }) => window - padding.horizontal >= kCompactWidthBreakpoint;
+
   /// What the rail takes off the window: its own region, or the system's
-  /// column where it joins one.
+  /// column where it joins one, plus a [cutout] on its edge.
   ///
   /// Joining one costs a little more than the region, because the rail is held
   /// off the edge to land on the line the system centres its glyphs on — see
@@ -83,8 +118,9 @@ abstract final class PaneMetrics {
     required double railWidth,
     double systemBar = 0,
     double edgeGap = 0,
+    double cutout = 0,
     RailDecoration rail = RailDecoration.none,
-  }) => math.max(rail.regionWidth(railWidth) + edgeGap, systemBar);
+  }) => math.max(rail.regionWidth(railWidth) + edgeGap, systemBar) + cutout;
 
   /// What the rail's column leaves, before decoration and the insets the panes
   /// merely bleed under.
@@ -94,6 +130,7 @@ abstract final class PaneMetrics {
     required double railWidth,
     double systemBar = 0,
     double edgeGap = 0,
+    double cutout = 0,
     RailDecoration rail = RailDecoration.none,
   }) =>
       window -
@@ -102,18 +139,18 @@ abstract final class PaneMetrics {
               railWidth: railWidth,
               systemBar: systemBar,
               edgeGap: edgeGap,
+              cutout: cutout,
               rail: rail,
             )
           : 0);
 
   /// The part of the horizontal insets the panes end up underneath.
   ///
-  /// The rail absorbs the inset on *its own* side: it sits against the window
-  /// edge and covers what is there instead of growing by it, and the shell
-  /// strips that inset from its subtree. That side is where the system's own
-  /// vertical bar is, which is exactly why [defaultChromeLayout] puts the rail
-  /// there. On the other side nothing covers the inset, so the pane against it
-  /// bleeds under.
+  /// The rail absorbs the inset on *its own* side: it joins the system's own
+  /// vertical bar there, which is exactly why [defaultChromeLayout] puts the
+  /// rail there, or grows by a cutout ([railCutoutInset]). Either way the
+  /// shell strips that inset from its subtree. On the other side nothing
+  /// covers the inset, so the pane against it bleeds under.
   ///
   /// [PaneDecoration.margin] already holds the cards away from the edges, and
   /// that part of the width is accounted for as decoration; only what is left
@@ -169,6 +206,9 @@ abstract final class PaneMetrics {
               railWidth: railWidth,
               systemBar: bar,
               edgeGap: bar > 0 ? systemBarMetrics.edgeGap(railWidth) : 0,
+              cutout: hasRail
+                  ? railCutoutInset(padding: padding, placement: placement)
+                  : 0,
               rail: rail,
             ),
           ) -

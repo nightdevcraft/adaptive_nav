@@ -25,6 +25,51 @@ class AppScope extends InheritedWidget {
       oldWidget.delegate != delegate || oldWidget.store != store;
 }
 
+/// An `AppBar` that keeps its trailing end clear of the clock where the shell
+/// lifts it into the status row (`liftHeadersIntoStatusRow`).
+///
+/// There the title stays centred only if [minCentredTitleWidth] is left
+/// between the reserves at both ends; otherwise it would drift towards the
+/// clock, so it goes to the start.
+class PaneAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const PaneAppBar({
+    required this.title,
+    this.leading,
+    this.backgroundColor,
+    this.actions = const <Widget>[],
+    super.key,
+  });
+
+  final Widget title;
+  final Widget? leading;
+  final Color? backgroundColor;
+  final List<Widget> actions;
+
+  static const double minCentredTitleWidth = 240;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    final double reserve = StatusRowScope.trailingReserveOf(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints pane) => AppBar(
+        backgroundColor: backgroundColor,
+        leading: leading,
+        title: title,
+        centerTitle: reserve == 0
+            ? null
+            : pane.maxWidth - 2 * reserve >= minCentredTitleWidth,
+        actions: <Widget>[
+          ...actions,
+          SizedBox(width: reserve),
+        ],
+      ),
+    );
+  }
+}
+
 /// The master: the branch root, so in the wide layout it lives in the left
 /// pane and in the compact one it is the whole screen.
 class PeopleListScreen extends StatelessWidget {
@@ -34,7 +79,7 @@ class PeopleListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppScope scope = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('People')),
+      appBar: const PaneAppBar(title: Text('People')),
       body: ListenableBuilder(
         listenable: scope.store,
         builder: (BuildContext context, Widget? _) => ListView(
@@ -80,38 +125,40 @@ class PersonDetailScreen extends StatelessWidget {
       builder: (BuildContext context, Widget? _) {
         final Person person = scope.store.byId(id);
         final Color shade = detailShade(context);
-        return Scaffold(
-          backgroundColor: shade,
-          appBar: AppBar(
-            backgroundColor: shade,
-            title: Text(person.name),
-            leading: IconButton(
-              icon: Icon(isRoot ? Icons.close : Icons.arrow_back),
-              onPressed: scope.delegate.pop,
+        return StatusColumnActions(
+          actions: <Widget>[
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit',
+              // The guard runs on every way out of the editor: system back,
+              // replace, a tab switch, or picking another person.
+              onPressed: () => scope.delegate.push(
+                PersonEdit(id),
+                onExit: () => confirmDiscard(context),
+              ),
             ),
-          ),
-          body: SafeArea(
-            top: false,
-            bottom: fullScreen,
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
+          ],
+          builder: (BuildContext context, List<Widget> actions) => Scaffold(
+            backgroundColor: shade,
+            appBar: PaneAppBar(
+              backgroundColor: shade,
+              title: Text(person.name),
+              leading: IconButton(
+                icon: Icon(isRoot ? Icons.close : Icons.arrow_back),
+                onPressed: scope.delegate.pop,
+              ),
+              actions: actions,
+            ),
+            body: StatusColumnActions.body(
+              SafeArea(
+                top: false,
+                bottom: fullScreen,
+                child: Center(
+                  child: Text(
                     person.role,
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    // The guard runs on every way out of the editor: system
-                    // back, replace, a tab switch, or picking another person.
-                    onPressed: () => scope.delegate.push(
-                      PersonEdit(id),
-                      onExit: () => confirmDiscard(context),
-                    ),
-                    child: const Text('Edit'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -176,7 +223,7 @@ class _PersonEditScreenState extends State<PersonEditScreen> {
     final Color shade = detailShade(context);
     return Scaffold(
       backgroundColor: shade,
-      appBar: AppBar(
+      appBar: PaneAppBar(
         backgroundColor: shade,
         title: Text(
           'Editing ${AppScope.of(context).store.byId(widget.id).name}',
@@ -216,7 +263,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: const PaneAppBar(title: Text('Settings')),
       // The switch is ephemeral state: leave the tab, come back, and it is
       // still where you left it — the branch navigator was never unmounted.
       body: SwitchListTile(
