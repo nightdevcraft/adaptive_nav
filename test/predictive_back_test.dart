@@ -111,9 +111,8 @@ void main() {
       testWidgets('a root that blocks pop keeps back in the app', (
         WidgetTester tester,
       ) async {
-        final DemoHarness h = DemoHarness();
-        await h.delegate.setNewRoutePath(
-          h.baseState
+        final DemoHarness h = DemoHarness(
+          start: (NavState<DemoRoute> base) => base
               .withBranch(
                 1,
                 BranchStack<DemoRoute>(<NavEntry<DemoRoute>>[

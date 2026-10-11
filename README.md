@@ -33,21 +33,55 @@ rotate, and on iPhone Duo and Galaxy Z Fold8 you can fold.
 
 ```yaml
 dependencies:
-  adaptive_nav: ^0.13.0
+  adaptive_nav: ^0.14.0
 ```
 
 ## Quick start
 
-Define a route type and a codec, describe your branches, and hand the delegate
-to `MaterialApp.router`:
+Define a route type and a codec, describe your branches, and hand an
+`AdaptiveNav` to `MaterialApp.router`. The route type needs value equality
+(`==` and `hashCode`): `NavEntry` equality and the URL parser compare routes
+with it.
 
 ```dart
-sealed class AppRoute {}
+import 'package:adaptive_nav/adaptive_nav.dart';
+import 'package:flutter/material.dart';
 
-class PeopleList extends AppRoute { /* ... */ }
+@immutable
+sealed class AppRoute {
+  const AppRoute();
+}
+
+class PeopleList extends AppRoute {
+  const PeopleList();
+
+  @override
+  bool operator ==(Object other) => other is PeopleList;
+
+  @override
+  int get hashCode => (PeopleList).hashCode;
+}
+
 class PersonDetail extends AppRoute {
-  PersonDetail(this.id);
+  const PersonDetail(this.id);
+
   final int id;
+
+  @override
+  bool operator ==(Object other) => other is PersonDetail && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(PersonDetail, id);
+}
+
+class SettingsRoute extends AppRoute {
+  const SettingsRoute();
+
+  @override
+  bool operator ==(Object other) => other is SettingsRoute;
+
+  @override
+  int get hashCode => (SettingsRoute).hashCode;
 }
 
 class AppCodec extends RouteCodec<AppRoute> {
@@ -57,14 +91,33 @@ class AppCodec extends RouteCodec<AppRoute> {
   Uri encode(AppRoute route) => switch (route) {
     PeopleList() => Uri.parse('/people'),
     PersonDetail(:final int id) => Uri.parse('/people/$id'),
+    SettingsRoute() => Uri.parse('/settings'),
   };
 
   @override
-  AppRoute decode(Uri uri) { /* ... */ }
+  AppRoute decode(Uri uri) {
+    final List<String> seg = uri.pathSegments;
+    if (seg.isNotEmpty && seg.first == 'settings') {
+      return const SettingsRoute();
+    }
+    final int? id = seg.length >= 2 ? int.tryParse(seg[1]) : null;
+    return id != null ? PersonDetail(id) : const PeopleList();
+  }
 
+  // Which tab a route belongs to.
   @override
-  int branchOf(AppRoute route) => 0; // which tab this route belongs to
+  int branchOf(AppRoute route) => switch (route) {
+    PeopleList() || PersonDetail() => 0,
+    SettingsRoute() => 1,
+  };
 }
+
+// Your screens, one per route.
+Widget buildPage(AppRoute route) => switch (route) {
+  PeopleList() => const Text('People'),
+  PersonDetail(:final int id) => Text('Person $id'),
+  SettingsRoute() => const Text('Settings'),
+};
 
 final shellConfig = AdaptiveShellConfig<AppRoute>(
   branches: <BranchConfig<AppRoute>>[
@@ -104,19 +157,38 @@ final initialState = NavState<AppRoute>(
   ],
 );
 
-final delegate = AdaptiveRouterDelegate<AppRoute>(
-  shellConfig: shellConfig,
-  initialState: initialState,
-);
+class App extends StatefulWidget {
+  const App({super.key});
 
-MaterialApp.router(
-  routerDelegate: delegate,
-  routeInformationParser: AdaptiveRouteInformationParser<AppRoute>(
-    codec: const AppCodec(),
-    baseState: initialState,
-  ),
-);
+  @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  final AdaptiveNav<AppRoute> nav = AdaptiveNav<AppRoute>(
+    shellConfig: shellConfig,
+    initialState: initialState,
+    codec: const AppCodec(), // optional: URLs and deep links
+  );
+
+  @override
+  void dispose() {
+    nav.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp.router(routerConfig: nav);
+}
+
+void main() => runApp(const App());
 ```
+
+`AdaptiveNav` is a `RouterConfig`: the delegate, the URL parser and provider
+and the back button dispatcher, plus the navigation API. It creates and
+disposes all of them itself. `AdaptiveRouterDelegate` and
+`AdaptiveRouteInformationParser` are still public for an app that wires the
+`Router` by hand.
 
 A complete, runnable app is in [`example/`](example).
 
@@ -128,8 +200,12 @@ step through fixed states:
 | Window width | Chrome | Panes |
 | --- | --- | --- |
 | `< 600` (compact) | `NavigationBar` | master in the body, detail as an overlay **over the bar** |
-| `600–840` (medium) | `NavigationRail` | one pane — the detail covers the master |
-| `> 840` (expanded) | `NavigationRail` | two panes — master \| detail |
+| `≥ 600`, `MasterDetailConfig.fits` is false | `NavigationRail` | one pane — the detail covers the master |
+| `≥ 600`, `MasterDetailConfig.fits` is true | `NavigationRail` | two panes — master \| detail |
+
+The width is measured without the side insets. With the defaults — a rail of
+80 plus its 1-point divider, minimums of 320 and 360, no pane margins, gap or
+side insets — `fits` turns true from 761 across.
 
 A bar with two panes above it is the fourth combination, and it exists for one
 device: iPhone Duo's inner display in portrait is 669 points across and Apple
@@ -172,18 +248,47 @@ navigators stay mounted, so no state is lost when the split appears or goes.
 
 ## The API
 
-Navigation is imperative and lives on the delegate:
+Navigation is imperative and lives on `AdaptiveNav` (and on the delegate it
+forwards to):
 
 ```dart
-delegate.push(route, transition: ..., onExit: ...); // returns a result future
-delegate.pop();
-delegate.popWithResult(value);
-delegate.replace(route);
-delegate.resetTo(route);        // branch becomes [route]
-delegate.resetDetailTo(route);  // branch becomes [root, route]
-delegate.popToRoot();
-delegate.goBranch(index, resetToRoot: false);
-delegate.reevaluate();          // re-run the redirect hook
+nav.push(route, transition: ..., onExit: ...); // returns a result future
+nav.pop();
+nav.popWithResult(value);
+nav.replace(route);
+nav.resetTo(route);        // branch becomes [route]
+nav.resetDetailTo(route);  // branch becomes [root, route]
+nav.popToRoot();
+nav.goBranch(index, resetToRoot: false);
+nav.reevaluate();          // re-run the redirect hook
+nav.state;                 // the current NavState
+```
+
+To react to every change, listen to `nav.routerDelegate`.
+
+### Holding it in a provider
+
+`AdaptiveNav` is not a `Listenable`, so a dependency container that rejects
+change notifiers — `riverpod_lint`'s `unsupported_provider_value`, for one —
+takes it as is. Nothing else needs a provider of its own: app state that drives
+the router stays an ordinary notifier and is pushed in.
+
+```dart
+@Riverpod(keepAlive: true)
+AdaptiveNav<AppRoute> nav(Ref ref) {
+  final nav = AdaptiveNav<AppRoute>(
+    shellConfig: shellConfig,
+    initialState: initialState,
+    codec: const AppCodec(),
+    immersive: ref.read(fullscreenProvider),
+    resizablePanes: true,
+    onPaneCommit: (branchId, fraction) => saveFraction(branchId, fraction),
+  );
+  ref.listen(fullscreenProvider, (_, bool on) => nav.immersive = on);
+  ref.listen(sessionProvider, (_, _) => nav.reevaluate());
+  ref.onDispose(nav.dispose);
+  return nav;
+}
 ```
 
 `transition` takes an `AppTransition`: `platform`, `fade`, `modal`, `none`, or
@@ -200,7 +305,7 @@ back, gesture, app bar, `replace`, `resetTo`, `popToRoot`, `resetDetailTo`, and
 switching tabs.
 
 ```dart
-delegate.push(
+nav.push(
   PersonEdit(id),
   onExit: () => confirmDiscard(context), // Future<bool>
 );
@@ -258,9 +363,15 @@ The round trip is defined on the visible location — the top of the active
 branch. Like `go_router`, a deep link opens the target screen rather than
 synthesising a multi-level back stack for it.
 
+A link changes only its own branch and keeps what it can there: the branch's
+current root stays, and a screen already open in the stack is reused, with the
+stack cut back to it. Screens cut off this way are **not** asked through their
+`onExit`; their `push` futures complete with `null`.
+
 `AdaptiveShellConfig.redirect` is the auth guard: it can substitute the state
-before it is applied. It runs on incoming URLs and on
-`AdaptiveRouterDelegate.reevaluate()`, which is the equivalent of
+before it is applied. It runs once at start (on the first location with a
+codec, on the first frame without one), on incoming URLs and on
+`AdaptiveNav.reevaluate()`, which is the equivalent of
 `refreshListenable` — call it when the session changes.
 
 ## Chrome
@@ -291,11 +402,11 @@ stretched under both panes on a tablet. Calling
 `ScaffoldMessenger.of(context)` from any screen inside a pane already lands on
 the right one.
 
-For something that belongs to no pane in particular, the delegate exposes both:
+For something that belongs to no pane in particular, `AdaptiveNav` exposes both:
 
 ```dart
-delegate.masterMessenger?.showSnackBar(const SnackBar(content: Text('Synced')));
-delegate.detailMessenger?.showSnackBar(...);
+nav.masterMessenger?.showSnackBar(const SnackBar(content: Text('Synced')));
+nav.detailMessenger?.showSnackBar(...);
 ```
 
 ## Panes
@@ -325,25 +436,31 @@ replaces both in a portrait window — a narrow list there, the centre in
 landscape. The user's drag and an active fold ([Half open](#half-open)) still
 win, and so do the pane minimums.
 
-Pass a `PaneSplitController` and the boundary becomes draggable, per branch,
-clamped by both panes' minimum widths. The controller is owned by the app, so
-the chosen width can be persisted:
+`resizablePanes: true` makes the boundary draggable, per branch, clamped by
+both panes' minimum widths. The chosen width goes out on release, so it can be
+persisted:
 
 ```dart
-final split = PaneSplitController(
-  initial: loadedFractions, // if you already have them
-  onCommit: (branchId, fraction) => save(branchId, fraction), // on release
+final nav = AdaptiveNav<AppRoute>(
+  // ...
+  resizablePanes: true,
+  paneFractions: loadedFractions, // if you already have them
+  onPaneCommit: (branchId, fraction) => save(branchId, fraction),
 );
 
 // Or seed it later, once an async read comes back. Branches the user has
 // already dragged in this session are left alone.
-split.restore(await loadFractions());
+nav.paneSplit!.restore(await loadFractions());
 ```
 
-`AdaptiveShellConfig.immersive` is a `ValueListenable<bool>` that slides the
-rail out of the wide layout and hands the strip to the panes. It changes
-geometry only: the layout class stays frozen, so a branch never crosses the
-two-pane threshold mid-animation.
+`nav.immersive = true` slides the rail out of the wide layout and hands the
+strip to the panes; pass `immersive: false` to the constructor to enable the
+mode. It changes geometry only: the layout class stays frozen, so a branch
+never crosses the two-pane threshold mid-animation.
+
+With a hand-built `Router`, the same two live in the config as
+`AdaptiveShellConfig.paneSplit` (a `PaneSplitController` the app owns) and
+`AdaptiveShellConfig.immersive` (a `ValueListenable<bool>`).
 
 ## What screens can read
 
@@ -424,8 +541,9 @@ the column on the right. The reserve follows it. `SystemBarMetrics.end` takes
 the window and the column's side and returns the end, should other hardware put
 the camera elsewhere.
 
-That column is short — six destinations on the outer display upright, fewer
-turned, against a desktop's dozen — and Material's `NavigationRail` neither scrolls nor wraps:
+That column is short — seven one-line destinations on the outer display
+upright (six whose labels wrap), five turned, against a desktop's dozen — and
+Material's `NavigationRail` neither scrolls nor wraps:
 past its height it simply overflows. So the shell counts them instead and puts
 the rest behind a menu button at the end of the rail
 (`AdaptiveShellConfig.railOverflow`, on by default). The order never changes

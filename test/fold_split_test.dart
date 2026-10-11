@@ -251,6 +251,37 @@ void main() {
       );
     });
 
+    testWidgets('a fold that would squeeze the detail past the gap is '
+        'ignored', (WidgetTester tester) async {
+      addTearDown(tester.view.reset);
+      // Pane area 659, the window centre at 289 in it: 370 is left for the
+      // detail, 354 once the 16 of gap comes off.
+      setPose(tester, const Size(740, 800));
+      final DemoHarness h = DemoHarness(
+        masterMinWidth: 200,
+        foldLocator: FoldMetrics.windowCentre,
+        panes: const PaneDecoration(gap: 16),
+      );
+      await tester.pumpWidget(h.app());
+      h.delegate.push(const DemoDetail(1));
+      await tester.pumpAndSettle();
+
+      expect(detail(tester).width, greaterThanOrEqualTo(360));
+    });
+
+    test('the pane gap counts against the detail around a fold', () {
+      const MasterDetailConfig md = MasterDetailConfig(
+        masterMinWidth: 320,
+        detailMinWidth: 360,
+      );
+      const PaneFold line = PaneFold(start: 360, end: 360);
+      expect(md.fitsAround(line, 720), isTrue);
+      expect(md.fitsAround(line, 720, gap: 16), isFalse);
+      // A crease wider than the gap is the gap.
+      const PaneFold crease = PaneFold(start: 340, end: 360);
+      expect(md.fitsAround(crease, 720, gap: 16), isTrue);
+    });
+
     test('an empty list is the iOS case, and says nothing', () {
       expect(
         FoldMetrics.paneFold(

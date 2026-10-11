@@ -16,10 +16,14 @@ class AdaptiveRouteInformationParser<R>
   AdaptiveRouteInformationParser({
     required this.codec,
     required this.baseState,
+    this.shellConfig,
   });
 
   final RouteCodec<R> codec;
   final NavState<R> baseState;
+
+  /// Gives a decoded screen its [BranchConfig.transition], as a push would.
+  final AdaptiveShellConfig<R>? shellConfig;
 
   @override
   Future<NavState<R>> parseRouteInformation(RouteInformation routeInformation) {
@@ -46,7 +50,8 @@ class AdaptiveRouteInformationParser<R>
     }
     final NavEntry<R> entry = NavEntry<R>(
       route: route,
-      transition: AppTransition.platform,
+      transition:
+          shellConfig?.branches[branch].transition ?? AppTransition.platform,
     );
     return baseState
         .copyWith(activeBranch: branch)

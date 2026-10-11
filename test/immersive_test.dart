@@ -1,5 +1,6 @@
 import 'package:adaptive_nav/adaptive_nav.dart';
 import 'package:adaptive_nav/src/adaptive_shell.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -225,6 +226,36 @@ void main() {
       closeTo(narrowWide.width, 0.5),
     );
   });
+
+  // The system's column on iPhone Duo's outer display holds the rail off the
+  // edge (edgeGap) and leaves slack; both have to survive the extra layer.
+  for (final (String pose, EdgeInsets padding) in <(String, EdgeInsets)>[
+    ('left', kDuoOuterLandscapePadding),
+    ('right', kDuoOuterLandscapeRightPadding),
+  ]) {
+    testWidgets('immersive off lays the rail out as without it, $pose', (
+      WidgetTester tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      setPose(tester, kDuoOuterLandscape, padding: padding);
+
+      Future<(Rect, Rect)> geometry(ValueListenable<bool>? immersive) async {
+        await tester.pumpWidget(DemoHarness(immersive: immersive).app());
+        await tester.pumpAndSettle();
+        final (Rect, Rect) result = (
+          tester.getRect(find.byType(NavigationRail)),
+          tester.getRect(find.byType(VerticalDivider)),
+        );
+        await tester.pumpWidget(const SizedBox());
+        return result;
+      }
+
+      final ValueNotifier<bool> off = ValueNotifier<bool>(false);
+      addTearDown(off.dispose);
+      final (Rect rail, Rect divider) = await geometry(null);
+      expect(await geometry(off), (rail, divider));
+    });
+  }
 
   testWidgets('without immersive in the config there is no extra layer', (
     WidgetTester tester,

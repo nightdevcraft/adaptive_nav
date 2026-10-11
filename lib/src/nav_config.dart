@@ -376,7 +376,7 @@ class RailDecoration {
   final ShellCardBorder? border;
 
   /// Fills the whole rail column, including the part
-  /// [AdaptiveShellConfig.systemBarReserve] keeps free at the top.
+  /// [SystemBarMetrics.reserve] keeps free at the top.
   ///
   /// `NavigationRail` paints only as far as it is laid out, so without this the
   /// reserve would show the canvas through and the column would read as two
@@ -552,8 +552,9 @@ class MasterDetailConfig {
 
   /// Whether [fold] leaves both panes their minimums, so the boundary can go
   /// on it rather than where the width would put it.
-  bool fitsAround(PaneFold fold, double available) =>
-      fold.start >= masterMinWidth && available - fold.end >= detailMinWidth;
+  bool fitsAround(PaneFold fold, double available, {double gap = 0}) =>
+      fold.start >= masterMinWidth &&
+      available - fold.start - math.max(gap, fold.width) >= detailMinWidth;
 
   /// Whether there is room to move the divider. At exactly the threshold width
   /// both panes are already at their minimums, and a handle would be a lie.
@@ -651,6 +652,8 @@ class AdaptiveShellConfig<R> {
          'backToBranch must be a branch index',
        );
 
+  /// At least one; at least two with [BranchConfig.showsInChrome] for the
+  /// Material bar and rail, unless [barBuilder] and [railBuilder] are given.
   final List<BranchConfig<R>> branches;
 
   /// Where the bar or the rail goes. See [defaultChromeLayout]; replace it to
@@ -689,8 +692,8 @@ class AdaptiveShellConfig<R> {
   /// to fit.
   ///
   /// It matters on a folded iPhone Duo, where the column is short and shares
-  /// its top with the system bar: about seven destinations fit there against a
-  /// desktop's dozen.
+  /// its top with the system bar: seven one-line destinations fit upright,
+  /// five turned, against a desktop's dozen.
   final bool railOverflow;
 
   /// Builds that menu button in place of the Material one — `null` is an

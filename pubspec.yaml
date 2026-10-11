@@ -3,7 +3,7 @@ description: >-
   A Navigator 2.0 router that renders one navigation state as a stack or as
   master-detail panes and keeps screen state across resizes and folds. Ready
   for iPhone Duo.
-version: 0.13.0
+version: 0.14.0
 
 repository: https://github.com/nightdevcraft/adaptive_nav
 issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues
@@ -23,6 +23,8 @@ topics:
 
 environment:
   sdk: ^3.10.8
+  # The first Flutter release with Dart 3.10.8.
+  flutter: ">=3.38.9"
 
 dependencies:
   flutter:

@@ -13,6 +13,8 @@ import 'pane_split.dart';
 import 'status_column.dart';
 import 'status_row.dart';
 
+typedef _Stacks = ({Widget masters, Widget details, Widget placeholder});
+
 /// Stable keys for one branch's navigators, held by the delegate.
 ///
 /// A `Navigator` addressed by a `GlobalKey` moves between the compact, medium
@@ -51,11 +53,17 @@ class AdaptiveShell<R> extends StatelessWidget {
     required this.onDidRemovePage,
     required this.onNavigationNotification,
     required this.onDrawerChanged,
+    required this.immersive,
+    required this.paneSplit,
     super.key,
   });
 
   final NavState<R> state;
   final AdaptiveShellConfig<R> shellConfig;
+
+  /// The config's own, or the one `AdaptiveNav` owns.
+  final ValueListenable<bool>? immersive;
+  final PaneSplitController? paneSplit;
   final List<BranchNavigatorKeys> branchKeys;
   final Key branchFadeKey;
   final GlobalKey<ScaffoldMessengerState> masterMessengerKey;
@@ -202,29 +210,29 @@ class AdaptiveShell<R> extends StatelessWidget {
   Widget _paneMessenger(GlobalKey<ScaffoldMessengerState> key, Widget child) =>
       ScaffoldMessenger(key: key, child: child);
 
-  /// [inPane] is the signal [AppTransition.adaptive] pages read. It lives in a
-  /// scope rather than in the entry, because the layout changes on resize while
-  /// the page has to stay the same one.
-  Widget _detailsStack({required bool inPane}) => DetailPaneScope(
-    inPane: inPane,
-    child: _paneMessenger(
-      detailMessengerKey,
-      IndexedStack(
-        key: detailsStackKey,
-        index: state.activeBranch,
-        sizing: StackFit.expand,
-        children: <Widget>[
-          for (int i = 0; i < shellConfig.branches.length; i++)
-            if (mountedBranches.contains(i))
-              _nav(branchKeys[i].detail, _detailPages(i))
-            else
-              const SizedBox.shrink(),
-        ],
-      ),
+  Widget _detailsStack() => _paneMessenger(
+    detailMessengerKey,
+    IndexedStack(
+      key: detailsStackKey,
+      index: state.activeBranch,
+      sizing: StackFit.expand,
+      children: <Widget>[
+        for (int i = 0; i < shellConfig.branches.length; i++)
+          if (mountedBranches.contains(i))
+            _nav(branchKeys[i].detail, _detailPages(i))
+          else
+            const SizedBox.shrink(),
+      ],
     ),
   );
 
-  Widget _detailPlaceholder(BuildContext context) {
+  /// [inPane] is the signal [AppTransition.adaptive] pages read. It lives in a
+  /// scope rather than in the entry, because the layout changes on resize while
+  /// the page has to stay the same one.
+  Widget _detailsIn(_Stacks stacks, {required bool inPane}) =>
+      DetailPaneScope(inPane: inPane, child: stacks.details);
+
+  Widget _detailPlaceholder() {
     final WidgetBuilder? b =
         shellConfig.branches[state.activeBranch].detailPlaceholder;
     // A blank pane, not a caption: the package has no screens of its own and
@@ -241,9 +249,17 @@ class AdaptiveShell<R> extends StatelessWidget {
     // In window coordinates, like a display feature's bounds; converted to
     // pane coordinates once the pane area's origin is known.
     final Rect? foldHint = shellConfig.foldLocator?.call(window, padding);
+    // Built once and only placed below, so the per-frame rebuilds of a drag,
+    // the detail reveal and the immersive slide leave the screens alone.
+    final _Stacks stacks = (
+      masters: _mastersStack(),
+      details: _detailsStack(),
+      placeholder: _detailPlaceholder(),
+    );
     if (placement.isRail) {
       return _buildRail(
         context,
+        stacks,
         window: window.width,
         padding: padding,
         placement: placement,
@@ -252,6 +268,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     }
     return _buildBar(
       context,
+      stacks,
       window: window.width,
       padding: padding,
       statusRow: _statusRow(Theme.of(context).platform, window, padding),
@@ -349,7 +366,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// With two panes the shell only takes the card margin off it first, so what
   /// an `AppBar` reserves inside a card is what is left over the card.
   Widget _buildBar(
-    BuildContext context, {
+    BuildContext context,
+    _Stacks stacks, {
     required double window,
     required EdgeInsets padding,
     ({double top, double start})? statusRow,
@@ -393,29 +411,35 @@ class AdaptiveShell<R> extends StatelessWidget {
           // wrong on the display this layout exists for: iPhone Duo's inner
           // screen in portrait has 82 points of top inset, and a card starting
           // below it *plus* the margin leaves a band that deep unused.
-          child: _paneInsets(
-            context,
-            top: math.max(
-              0.0,
-              (statusRow?.top ?? padding.top) - panes.margin.top,
-            ),
-            child: Builder(
-              builder: (BuildContext inner) => _inPaneArea(
-                panes: panes,
-                child: _twoPanes(
-                  inner,
-                  md,
-                  paneArea,
-                  underlap,
-                  underlap.left + panes.margin.left,
-                  foldHint,
-                  // In the panes' `Stack`, which spans the margins.
-                  statusRow: statusRow == null
-                      ? null
-                      : (
-                          start: statusRow.start - panes.margin.left,
-                          end: window - panes.margin.horizontal,
-                        ),
+          //
+          // Read under the `Scaffold`, which has taken the bar's bottom inset
+          // off its body; the shell's context would hand it back to the panes.
+          child: Builder(
+            builder: (BuildContext body) => _paneInsets(
+              body,
+              top: math.max(
+                0.0,
+                (statusRow?.top ?? padding.top) - panes.margin.top,
+              ),
+              child: Builder(
+                builder: (BuildContext inner) => _inPaneArea(
+                  panes: panes,
+                  child: _twoPanes(
+                    inner,
+                    stacks,
+                    md,
+                    paneArea,
+                    underlap,
+                    underlap.left + panes.margin.left,
+                    foldHint,
+                    // In the panes' `Stack`, which spans the margins.
+                    statusRow: statusRow == null
+                        ? null
+                        : (
+                            start: statusRow.start - panes.margin.left,
+                            end: window - panes.margin.horizontal,
+                          ),
+                  ),
                 ),
               ),
             ),
@@ -424,7 +448,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         bottomNavigationBar: _barWidget(context),
       );
     }
-    return _buildStack(context, window: window, statusRow: statusRow);
+    return _buildStack(context, stacks, window: window, statusRow: statusRow);
   }
 
   /// bar, one pane: master in the body and the detail overlaying the bar.
@@ -434,7 +458,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// covers an open drawer. In the root states, where a drawer is opened, the
   /// detail is empty and transparent.
   Widget _buildStack(
-    BuildContext context, {
+    BuildContext context,
+    _Stacks stacks, {
     required double window,
     ({double top, double start})? statusRow,
   }) {
@@ -453,7 +478,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           body: _statusRowPane(
             top: statusRow?.top,
             reserve: reserve,
-            child: _mastersStack(),
+            child: stacks.masters,
           ),
           bottomNavigationBar: _barWidget(context),
         ),
@@ -465,7 +490,7 @@ class AdaptiveShell<R> extends StatelessWidget {
             child: _statusRowPane(
               top: statusRow?.top,
               reserve: reserve,
-              child: _detailsStack(inPane: false),
+              child: _detailsIn(stacks, inPane: false),
             ),
           ),
         ),
@@ -486,7 +511,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// insets come off the pane area instead, because a pane only bleeds under
   /// them; see [PaneUnderlap].
   Widget _buildRail(
-    BuildContext context, {
+    BuildContext context,
+    _Stacks stacks, {
     required double window,
     required EdgeInsets padding,
     required ChromePlacement placement,
@@ -580,6 +606,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           child: Builder(
             builder: (BuildContext inner) => _immersiveRow(
               inner,
+              stacks,
               railWidget: railWidget,
               rail: rail,
               panes: panes,
@@ -614,7 +641,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// Wraps the row in the immersive listener, or skips it entirely when the
   /// mode is not configured.
   Widget _immersiveRow(
-    BuildContext context, {
+    BuildContext context,
+    _Stacks stacks, {
     required Widget? railWidget,
     required RailDecoration rail,
     required PaneDecoration panes,
@@ -633,10 +661,11 @@ class AdaptiveShell<R> extends StatelessWidget {
     required Rect? foldHint,
     required Rect? statusColumn,
   }) {
-    final ValueListenable<bool>? immersive = shellConfig.immersive;
+    final ValueListenable<bool>? immersive = this.immersive;
     if (immersive == null) {
       return _railRow(
         context,
+        stacks,
         railWidget: railWidget,
         rail: rail,
         panes: panes,
@@ -671,6 +700,7 @@ class AdaptiveShell<R> extends StatelessWidget {
             builder: (BuildContext context, double progress, Widget? _) =>
                 _railRow(
                   context,
+                  stacks,
                   railWidget: railWidget,
                   rail: rail,
                   panes: panes,
@@ -704,7 +734,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// doing that mid-animation would move the branch navigators by `GlobalKey`
   /// and put the app's own layout formula out of step.
   Widget _railRow(
-    BuildContext context, {
+    BuildContext context,
+    _Stacks stacks, {
     required Widget? railWidget,
     required RailDecoration rail,
     required PaneDecoration panes,
@@ -769,21 +800,9 @@ class AdaptiveShell<R> extends StatelessWidget {
           : ColoredBox(color: columnColor, child: box);
     }
 
-    final List<Widget> railRegionWidgets = <Widget>[
-      if (railWidget != null && immersive)
-        _railRegion(
-          context,
-          railWidget: railWidget,
-          rail: rail,
-          region: railRegion,
-          progress: progress,
-          onLeft: onLeft,
-          cutout: cutout,
-          reserve: reserve,
-          reserveEnd: reserveEnd,
-          top: railTop,
-        )
-      else if (railWidget != null) ...<Widget>[
+    // Shared, so the immersive layer slides out exactly the plain column.
+    final List<Widget> railColumn = <Widget>[
+      if (railWidget != null) ...<Widget>[
         if (onLeft && edgeGap > 0) spacer(edgeGap),
         if (!onLeft && slack > 0) SizedBox(width: slack),
         if (!onLeft && rail.dividerWidth > 0)
@@ -804,6 +823,16 @@ class AdaptiveShell<R> extends StatelessWidget {
         if (!onLeft && edgeGap > 0) spacer(edgeGap),
       ],
     ];
+    final List<Widget> railRegionWidgets = railWidget != null && immersive
+        ? <Widget>[
+            _railRegion(
+              region: railRegion,
+              progress: progress,
+              onLeft: onLeft,
+              children: railColumn,
+            ),
+          ]
+        : railColumn;
     final Widget content = Expanded(
       // The content area stops at the rail divider rather than the window
       // edge on the rail's side, and the rail has already handled that inset.
@@ -819,6 +848,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           child: md != null && md.fits(paneArea, gap: panes.gap)
               ? _twoPanes(
                   context,
+                  stacks,
                   md,
                   livePaneArea,
                   underlap,
@@ -826,11 +856,18 @@ class AdaptiveShell<R> extends StatelessWidget {
                   foldHint,
                   statusColumn: paneColumn,
                 )
-              : _singlePanel(context, underlap, statusColumn: paneColumn),
+              : _singlePanel(
+                  context,
+                  stacks,
+                  underlap,
+                  statusColumn: paneColumn,
+                ),
         ),
       ),
     );
+    // Physical, like [ChromePlacement]: a right-to-left locale must not mirror.
     return Row(
+      textDirection: TextDirection.ltr,
       children: onLeft
           ? <Widget>[...railRegionWidgets, content]
           : <Widget>[content, ...railRegionWidgets],
@@ -937,17 +974,11 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// pinned to its right edge, so it slides out whole. Squeezing it is not an
   /// option: its destinations are laid out into the declared width and would
   /// break at 40 px. The subtree stays mounted throughout.
-  Widget _railRegion(
-    BuildContext context, {
-    required Widget railWidget,
-    required RailDecoration rail,
+  Widget _railRegion({
     required double region,
     required double progress,
     required bool onLeft,
-    double cutout = 0,
-    double reserve = 0,
-    SystemBarEnd reserveEnd = SystemBarEnd.top,
-    double top = 0,
+    required List<Widget> children,
   }) {
     return SizedBox(
       key: railRegionKey,
@@ -959,24 +990,7 @@ class AdaptiveShell<R> extends StatelessWidget {
           alignment: onLeft ? Alignment.centerRight : Alignment.centerLeft,
           minWidth: region,
           maxWidth: region,
-          child: Row(
-            children: <Widget>[
-              if (!onLeft && rail.dividerWidth > 0)
-                VerticalDivider(width: rail.dividerWidth),
-              _railCard(
-                context,
-                railWidget: railWidget,
-                rail: rail,
-                onLeft: onLeft,
-                cutout: cutout,
-                reserve: reserve,
-                reserveEnd: reserveEnd,
-                top: top,
-              ),
-              if (onLeft && rail.dividerWidth > 0)
-                VerticalDivider(width: rail.dividerWidth),
-            ],
-          ),
+          child: Row(textDirection: TextDirection.ltr, children: children),
         ),
       ),
     );
@@ -1101,6 +1115,7 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// is transparent and the master shows through at full width.
   Widget _singlePanel(
     BuildContext context,
+    _Stacks stacks,
     PaneUnderlap underlap, {
     Rect? statusColumn,
   }) {
@@ -1114,12 +1129,12 @@ class AdaptiveShell<R> extends StatelessWidget {
           context,
           Stack(
             children: <Widget>[
-              _mastersStack(),
+              stacks.masters,
               IgnorePointer(
                 ignoring: _activeDetailEmpty,
                 // Same presentation as compact, so the same platform
                 // transition.
-                child: _detailsStack(inPane: false),
+                child: _detailsIn(stacks, inPane: false),
               ),
             ],
           ),
@@ -1134,6 +1149,7 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// what a display feature's bounds are measured in.
   Widget _twoPanes(
     BuildContext context,
+    _Stacks stacks,
     MasterDetailConfig md,
     double width,
     PaneUnderlap underlap,
@@ -1160,10 +1176,11 @@ class AdaptiveShell<R> extends StatelessWidget {
         ? window.width / 2 - origin
         : null;
     final bool portrait = window.height > window.width;
-    final PaneSplitController? split = shellConfig.paneSplit;
+    final PaneSplitController? split = paneSplit;
     if (split == null) {
       return _resizablePanes(
         context,
+        stacks,
         md,
         width,
         underlap,
@@ -1181,6 +1198,7 @@ class AdaptiveShell<R> extends StatelessWidget {
       listenable: split,
       builder: (BuildContext context, Widget? _) => _resizablePanes(
         context,
+        stacks,
         md,
         width,
         underlap,
@@ -1213,6 +1231,7 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// side, which is exactly what its screen insets away again.
   Widget _resizablePanes(
     BuildContext context,
+    _Stacks stacks,
     MasterDetailConfig md,
     double width,
     PaneUnderlap underlap,
@@ -1228,7 +1247,8 @@ class AdaptiveShell<R> extends StatelessWidget {
     // A fold both panes clear takes the boundary: a pane straddling a crease
     // is bent across two planes, which no ratio or drag is worth. Otherwise
     // the width decides, as everywhere else.
-    final bool onFold = fold != null && md.fitsAround(fold, width);
+    final bool onFold =
+        fold != null && md.fitsAround(fold, width, gap: panes.gap);
     final double gap = onFold ? math.max(panes.gap, fold.width) : panes.gap;
     final double masterWidth = onFold
         ? fold.start
@@ -1249,6 +1269,7 @@ class AdaptiveShell<R> extends StatelessWidget {
       curve: Curves.easeInOut,
       builder: (BuildContext context, double reveal, Widget? _) => _splitLayout(
         context,
+        stacks,
         panes: panes,
         underlap: underlap,
         gap: gap,
@@ -1318,7 +1339,8 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// the gap. While [split] is the full width the detail sits past the right
   /// edge and is clipped; that is where it slides in from.
   Widget _splitLayout(
-    BuildContext context, {
+    BuildContext context,
+    _Stacks stacks, {
     required PaneDecoration panes,
     required PaneUnderlap underlap,
     required double gap,
@@ -1360,7 +1382,7 @@ class AdaptiveShell<R> extends StatelessWidget {
               trailingReserve: reserve(0, split),
               child: StatusColumnScope(
                 column: masterHasColumn ? statusColumn : null,
-                child: _paneCard(context, _mastersStack()),
+                child: _paneCard(context, stacks.masters),
               ),
             ),
           ),
@@ -1387,8 +1409,8 @@ class AdaptiveShell<R> extends StatelessWidget {
                   Stack(
                     children: <Widget>[
                       if (_activeDetailEmpty && !collapsed)
-                        Positioned.fill(child: _detailPlaceholder(context)),
-                      _detailsStack(inPane: true),
+                        Positioned.fill(child: stacks.placeholder),
+                      _detailsIn(stacks, inPane: true),
                     ],
                   ),
                 ),
@@ -1617,6 +1639,29 @@ class AdaptiveShell<R> extends StatelessWidget {
     );
   }
 
+  /// The rail with every destination behind the menu: the button alone, where
+  /// the first destination would be. No destinations, no button.
+  Widget _menuRail(BuildContext context, List<int> hidden) => ColoredBox(
+    color: _railColor(context, shellConfig.rail),
+    child: SizedBox(
+      width: shellConfig.railWidth,
+      height: double.infinity,
+      child: hidden.isEmpty
+          ? null
+          : Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: kRailLeadingSpacer),
+                child: _railOverflow(
+                  context,
+                  hidden,
+                  hidden.contains(state.activeBranch),
+                ),
+              ),
+            ),
+    ),
+  );
+
   Widget? _drawer(BuildContext context, {required bool rail}) {
     if (!chrome) {
       return null;
@@ -1626,6 +1671,12 @@ class AdaptiveShell<R> extends StatelessWidget {
 
   Widget _bar(BuildContext context) {
     final List<int> items = _chromeBranches;
+    // Only for the stock bar: one tab is fine with a `barBuilder` or no chrome.
+    assert(
+      items.length >= 2,
+      'NavigationBar needs at least two branches with showsInChrome; with '
+      'fewer, give a barBuilder or hide the chrome with showsChrome',
+    );
     return NavigationBar(
       selectedIndex: items.indexOf(state.activeBranch),
       onDestinationSelected: (int i) => onSelectBranch(items[i]),
@@ -1657,8 +1708,14 @@ class AdaptiveShell<R> extends StatelessWidget {
         extents: extents,
         withButton: true,
       );
-      hidden = items.sublist(room);
-      items = items.sublist(0, room);
+      // A column that cannot hold two beside the button holds it alone.
+      final int shown = room < 2 ? 0 : room;
+      hidden = items.sublist(shown);
+      items = items.sublist(0, shown);
+    }
+    // `NavigationRail` needs two destinations; fewer all go behind the menu.
+    if (items.length < 2) {
+      return _menuRail(context, <int>[...items, ...hidden]);
     }
     final int pos = items.indexOf(state.activeBranch);
     return NavigationRail(
@@ -1764,7 +1821,10 @@ class _BranchFadeThroughState extends State<_BranchFadeThrough>
 /// Both layers are `translucent` on purpose: the area is wider than the gap and
 /// lies on the panes' edges, so a tap on a list row near the edge and a
 /// vertical scroll go to the pane. Only the horizontal drag is claimed.
-class _PaneSplitHandle extends StatelessWidget {
+///
+/// A handle that leaves the tree mid-drag ends the drag itself, since its
+/// recogniser goes with it and reports nothing more.
+class _PaneSplitHandle extends StatefulWidget {
   const _PaneSplitHandle({
     required this.onStart,
     required this.onUpdate,
@@ -1782,7 +1842,43 @@ class _PaneSplitHandle extends StatelessWidget {
   final VoidCallback onEnd;
 
   @override
+  State<_PaneSplitHandle> createState() => _PaneSplitHandleState();
+}
+
+class _PaneSplitHandleState extends State<_PaneSplitHandle> {
+  bool _dragging = false;
+
+  void _start() {
+    _dragging = true;
+    widget.onStart();
+  }
+
+  void _end() {
+    if (!_dragging) {
+      return;
+    }
+    _dragging = false;
+    widget.onEnd();
+  }
+
+  @override
+  void dispose() {
+    if (_dragging) {
+      _dragging = false;
+      // Deferred, as the tree is locked while it unmounts. The frame ends
+      // before any next drag can begin.
+      final VoidCallback end = widget.onEnd;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (Duration _) => end(),
+        debugLabel: 'PaneSplitHandle.endDrag',
+      );
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final PaneCanvasColor? color = widget.color;
     return MouseRegion(
       key: AdaptiveShell.paneSplitHandleKey,
       cursor: SystemMouseCursors.resizeColumn,
@@ -1794,13 +1890,14 @@ class _PaneSplitHandle extends StatelessWidget {
         // confirm the gesture and then reports deltas from the point of
         // acceptance, leaving the divider permanently 20 px behind the cursor.
         dragStartBehavior: DragStartBehavior.down,
-        onHorizontalDragStart: (DragStartDetails _) => onStart(),
-        onHorizontalDragUpdate: (DragUpdateDetails d) => onUpdate(d.delta.dx),
-        onHorizontalDragEnd: (DragEndDetails _) => onEnd(),
-        onHorizontalDragCancel: onEnd,
+        onHorizontalDragStart: (DragStartDetails _) => _start(),
+        onHorizontalDragUpdate: (DragUpdateDetails d) =>
+            widget.onUpdate(d.delta.dx),
+        onHorizontalDragEnd: (DragEndDetails _) => _end(),
+        onHorizontalDragCancel: _end,
         child: color == null
             ? const SizedBox.expand()
-            : Center(child: _PaneSplitDots(color: color!)),
+            : Center(child: _PaneSplitDots(color: color)),
       ),
     );
   }

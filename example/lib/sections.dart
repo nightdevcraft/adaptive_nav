@@ -19,7 +19,7 @@ class TeamsListScreen extends StatelessWidget {
             ListTile(
               title: Text(t.name),
               subtitle: Text('${t.members.length} members'),
-              onTap: () => scope.delegate.push(TeamDetail(t.id)),
+              onTap: () => scope.nav.push(TeamDetail(t.id)),
             ),
         ],
       ),
@@ -153,7 +153,7 @@ class NotesListScreen extends StatelessWidget {
             ListTile(
               title: Text(n.title),
               subtitle: Text(n.body, maxLines: 1),
-              onTap: () => scope.delegate.push(NoteDetail(n.id)),
+              onTap: () => scope.nav.push(NoteDetail(n.id)),
             ),
         ],
       ),

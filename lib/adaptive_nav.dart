@@ -1,10 +1,10 @@
 /// A Navigator 2.0 router that keeps screen state across window resizes.
 ///
-/// One navigation state ([NavState]) lives in a long-lived
-/// [AdaptiveRouterDelegate] and is rendered two ways: `compact` is a single
-/// `Navigator` stack, `wide` is master-detail panes. A resize changes the
-/// layout and nothing else — the screens move under stable navigator keys, so
-/// scroll offsets, text fields and controllers survive a rotation.
+/// One navigation state ([NavState]) lives in a long-lived [AdaptiveNav], in
+/// its [AdaptiveRouterDelegate], and is rendered two ways: `compact` is a
+/// single `Navigator` stack, `wide` is master-detail panes. A resize changes
+/// the layout and nothing else — the screens move under stable navigator keys,
+/// so scroll offsets, text fields and controllers survive a rotation.
 ///
 /// The package is generic over the route type `R` and knows nothing about the
 /// app's screens. Branches ([BranchConfig]), the `R ↔ URL` codec

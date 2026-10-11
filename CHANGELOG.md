@@ -1,3 +1,54 @@
+## 0.14.0
+
+### Features
+
+- `AdaptiveNav`: the router as one object, a `RouterConfig` for
+  `MaterialApp.router(routerConfig: nav)` that carries the navigation API. It
+  is not a `Listenable`, so it fits a Riverpod provider under `riverpod_lint`.
+- `AdaptiveNav` owns everything that notifies, the immersive flag and pane
+  split included (`immersive`, `resizablePanes`, `paneFractions`,
+  `onPaneCommit`). The config fields stay for a hand-built `Router`.
+
+### Changed
+
+- A deep link replaces only the target branch: its root and any screen already
+  in the stack are kept, and the other tabs keep their stacks. A deep-linked
+  screen gets its branch's `transition`.
+- `redirect` sees the start exactly once, with or without a codec. `state`
+  before the first frame is the initial state as given.
+- `goBranch` with an index outside the branches throws an `ArgumentError`.
+  `mountedBranches` is read-only and `@visibleForTesting`.
+- The router asserts that the config has branches, and the stock
+  `NavigationBar` that it has at least two in the chrome.
+- Gated mutations with no guard involved notify listeners in the same call,
+  as `push` does. Calling one from `build` now fails an assert.
+- Disposing the delegate completes every pending `push` with `null`; `push`
+  after dispose asserts.
+
+### Fixes
+
+- System back at a guarded root with nowhere to switch to leaves the app once
+  the guard agrees. The app's own `maybePop` there still does nothing.
+- Two panes over a bottom bar no longer get the bottom inset twice.
+- Exit guards no longer race: `pop`, `replace`, `resetTo`, `popToRoot` and
+  `resetDetailTo` remove only what they asked about and keep anything pushed
+  meanwhile, in any branch.
+- A screen removed by any route completes its `push` future with `null`.
+- An `onExit` guard that throws counts as a refusal and is reported; one that
+  answers after dispose changes nothing.
+- Right-to-left locales no longer mirror the wide layout.
+- A rail column too short for two destinations puts all of them behind the
+  overflow menu.
+- With `immersive` configured, the rail sits where it does without it.
+- Dragging the pane boundary, the detail reveal and the immersive slide no
+  longer rebuild every mounted screen each frame.
+- `MasterDetailConfig.fitsAround` takes the pane gap into account.
+- `PaneSplitController`: a drag that ends where it began commits nothing, a
+  drag writes only to its own branch, and `restore` leaves it alone. A handle
+  that leaves mid-drag ends the drag.
+- The empty detail's `detailPlaceholder` is no longer rebuilt every frame of a
+  drag or the detail reveal.
+
 ## 0.13.0
 
 ### Breaking

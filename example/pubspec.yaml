@@ -1,7 +1,7 @@
 name: adaptive_nav_example
 description: Demonstrates adaptive_nav — master-detail panes, draggable pane widths and exit guards.
 publish_to: 'none'
-version: 0.9.0
+version: 0.14.0
 
 environment:
   sdk: ^3.10.8

@@ -399,4 +399,64 @@ void main() {
     expect(find.text('Counter: 1'), findsOneWidget);
     expect(find.text('List: 1'), findsOneWidget);
   });
+
+  testWidgets('a handle that goes mid-drag ends the drag', (
+    WidgetTester tester,
+  ) async {
+    final List<(Object, double)> commits = <(Object, double)>[];
+    final PaneSplitController split = PaneSplitController(
+      onCommit: (Object id, double f) => commits.add((id, f)),
+    );
+    addTearDown(split.dispose);
+    final DemoHarness h = await pumpSplit(
+      tester,
+      const Size(1200, 800),
+      split: split,
+    );
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(AdaptiveShell.paneSplitHandleKey)),
+    );
+    await gesture.moveBy(const Offset(60, 0));
+    await tester.pump();
+    expect(split.isDragging, isTrue);
+
+    // The branch changes under the finger; Home has no panes.
+    await h.delegate.goBranch(1);
+    await tester.pumpAndSettle();
+    expect(find.byKey(AdaptiveShell.paneSplitHandleKey), findsNothing);
+    expect(split.isDragging, isFalse);
+    expect(commits, hasLength(1));
+    expect(commits.single.$1, 'staff');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(commits, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a handle that goes mid-drag while the panes stay ends it too', (
+    WidgetTester tester,
+  ) async {
+    final PaneSplitController split = PaneSplitController();
+    addTearDown(split.dispose);
+    final DemoHarness h = await pumpSplit(
+      tester,
+      const Size(1200, 800),
+      split: split,
+    );
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(AdaptiveShell.paneSplitHandleKey)),
+    );
+    await gesture.moveBy(const Offset(60, 0));
+    await tester.pump();
+
+    await h.delegate.pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(AdaptiveShell.paneSplitHandleKey), findsNothing);
+    expect(split.isDragging, isFalse);
+    await gesture.up();
+    expect(tester.takeException(), isNull);
+  });
 }

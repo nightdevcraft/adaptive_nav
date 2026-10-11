@@ -255,6 +255,30 @@ void main() {
       expect(tester.getRect(find.byType(AppBar).first).top + (82 - 12), 82.0);
     });
 
+    // The bar already clears the home indicator, so the panes get no bottom.
+    testWidgets('inner portrait: the home indicator is not cleared twice', (
+      WidgetTester tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      setPose(tester, kDuoInnerPortrait, padding: kDuoInnerPortraitPadding);
+      final DemoHarness h = DemoHarness(
+        masterMinWidth: 280,
+        detailMinWidth: 300,
+        panes: const PaneDecoration(margin: EdgeInsets.all(12), gap: 8),
+      );
+      await tester.pumpWidget(h.app());
+      await tester.pumpAndSettle();
+      h.delegate.push(const DemoDetail(1));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(split(tester), isTrue);
+      final Finder master = find.byType(DemoListScreen);
+      final Finder detail = find.byType(DemoDetailScreen);
+      expect(MediaQuery.paddingOf(tester.element(master)).bottom, 0);
+      expect(MediaQuery.paddingOf(tester.element(detail)).bottom, 0);
+    });
+
     testWidgets('inner portrait: the bar is still below the panes', (
       WidgetTester tester,
     ) async {

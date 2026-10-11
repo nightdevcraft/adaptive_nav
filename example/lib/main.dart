@@ -30,15 +30,6 @@ class _ExampleAppState extends State<ExampleApp> {
   /// Stands in for real storage.
   final Map<Object, double> _savedFractions = <Object, double>{};
 
-  /// Pane widths the user dragged, kept per branch. `onCommit` fires on release
-  /// rather than on every drag frame; an app reading storage asynchronously
-  /// would seed the controller later with `restore` instead of `initial`.
-  late final PaneSplitController _paneSplit = PaneSplitController(
-    initial: _savedFractions,
-    onCommit: (Object branchId, double fraction) =>
-        _savedFractions[branchId] = fraction,
-  );
-
   late final AdaptiveShellConfig<AppRoute> _shellConfig =
       AdaptiveShellConfig<AppRoute>(
         branches: <BranchConfig<AppRoute>>[
@@ -56,8 +47,10 @@ class _ExampleAppState extends State<ExampleApp> {
             // the panes get all 669 — still under the package's own defaults
             // of 320 + 360, which are a desktop's.
             //
-            // They also keep the outer display a single stack, which is what
-            // Apple asks for: the widest it ever offers is 489.
+            // The outer display stays a single stack, as Apple asks, because
+            // without its 84-point side bar it is at most 594 across: under the
+            // 600 below which the package always shows one screen. Its 589
+            // points of pane area in landscape would clear these minimums.
             //
             // In portrait the list is a narrow sidebar; in landscape the
             // boundary starts on the window centre — the hinge, on a Duo.
@@ -100,7 +93,6 @@ class _ExampleAppState extends State<ExampleApp> {
           splitHandleColor: (BuildContext context) =>
               Theme.of(context).colorScheme.outline,
         ),
-        paneSplit: _paneSplit,
         // Back at another tab's root returns to People.
         backToBranch: 0,
         // iPhone Duo, inner display: headers beside the clock in portrait
@@ -125,11 +117,20 @@ class _ExampleAppState extends State<ExampleApp> {
     );
   }();
 
-  late final AdaptiveRouterDelegate<AppRoute> _delegate =
-      AdaptiveRouterDelegate<AppRoute>(
-        shellConfig: _shellConfig,
-        initialState: _initialState,
-      );
+  /// The router and the navigation API in one object; it owns and disposes
+  /// everything that notifies.
+  ///
+  /// Dragged pane widths are kept per branch and saved on release. An app
+  /// reading storage asynchronously would seed them with `paneSplit.restore`.
+  late final AdaptiveNav<AppRoute> _nav = AdaptiveNav<AppRoute>(
+    shellConfig: _shellConfig,
+    initialState: _initialState,
+    codec: const AppRouteCodec(),
+    resizablePanes: true,
+    paneFractions: _savedFractions,
+    onPaneCommit: (Object branchId, double fraction) =>
+        _savedFractions[branchId] = fraction,
+  );
 
   static final NavState<AppRoute> _initialState = NavState<AppRoute>(
     activeBranch: 0,
@@ -159,12 +160,6 @@ class _ExampleAppState extends State<ExampleApp> {
     ],
   );
 
-  late final AdaptiveRouteInformationParser<AppRoute> _parser =
-      AdaptiveRouteInformationParser<AppRoute>(
-        codec: const AppRouteCodec(),
-        baseState: _initialState,
-      );
-
   Widget _buildPage(AppRoute route) => switch (route) {
     PeopleList() => const PeopleListScreen(),
     PersonDetail(:final int id) => PersonDetailScreen(id: id),
@@ -181,7 +176,7 @@ class _ExampleAppState extends State<ExampleApp> {
 
   @override
   void dispose() {
-    _paneSplit.dispose();
+    _nav.dispose();
     _store.dispose();
     super.dispose();
   }
@@ -189,15 +184,14 @@ class _ExampleAppState extends State<ExampleApp> {
   @override
   Widget build(BuildContext context) {
     return AppScope(
-      delegate: _delegate,
+      nav: _nav,
       store: _store,
       child: MaterialApp.router(
         title: 'adaptive_nav example',
         debugShowCheckedModeBanner: false,
         // The playground sets the device's platform in a theme above.
         theme: _theme.copyWith(platform: Theme.of(context).platform),
-        routerDelegate: _delegate,
-        routeInformationParser: _parser,
+        routerConfig: _nav,
       ),
     );
   }

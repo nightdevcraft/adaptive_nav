@@ -107,9 +107,8 @@ void main() {
 
   group('the column is counted, not measured', () {
     // A folded iPhone Duo: a short column whose top the system bar takes.
-    testWidgets('a folded Duo holds seven, and hides the rest', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('a folded Duo shows five two-line destinations, and hides '
+        'the rest', (WidgetTester tester) async {
       addTearDown(tester.view.reset);
       setPose(tester, kDuoOuterPortrait, padding: kDuoOuterPortraitPadding);
       final DemoHarness h = DemoHarness(extraBranches: 10);
@@ -123,7 +122,8 @@ void main() {
       expect(find.byType(NavigationRailDestination), findsNothing);
       // 678 tall, less the bar's 150 of reserve, 34 of home indicator, the
       // rail's 8 spacer and the button's 56: 430 of column. The harness's
-      // labels wrap, so a destination is 80 and five of them fit.
+      // labels wrap, so a destination is 80 and five of them fit. Without the
+      // button the column is 486, six of them: the README's count.
       expect(
         tester.widget<NavigationRail>(find.byType(NavigationRail)).destinations,
         hasLength(5),

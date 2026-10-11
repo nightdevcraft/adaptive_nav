@@ -316,6 +316,9 @@ class DemoProfileScreen extends StatelessWidget {
 /// `profile` (branch 2, only with [withHiddenBranch]) is a branch with NO
 /// chrome destination.
 ///
+/// [start] turns the base state into the delegate's initial one; the parser
+/// keeps the base.
+///
 /// [showsChrome] and [redirect] are unset by default, as are the chrome and
 /// drawer builders and [scaffoldKey] — so the defaults are plain Material.
 class DemoHarness {
@@ -353,6 +356,7 @@ class DemoHarness {
     int? backToBranch,
     bool liftHeadersIntoStatusRow = false,
     bool actionsInStatusColumn = false,
+    NavState<DemoRoute> Function(NavState<DemoRoute> base)? start,
     this.platform,
     this.wrapPage,
   }) {
@@ -436,7 +440,7 @@ class DemoHarness {
         liftHeadersIntoStatusRow: liftHeadersIntoStatusRow,
         actionsInStatusColumn: actionsInStatusColumn,
       ),
-      initialState: baseState,
+      initialState: start?.call(baseState) ?? baseState,
     );
 
     parser = AdaptiveRouteInformationParser<DemoRoute>(
@@ -469,15 +473,21 @@ class DemoHarness {
   }
 
   /// [onNavigationNotification] goes to `MaterialApp.router` as is: it sees
-  /// what the app would tell the system about back.
+  /// what the app would tell the system about back. [textDirection] overrides
+  /// the one the default localizations give.
   Widget app({
     NotificationListenerCallback<NavigationNotification>?
     onNavigationNotification,
+    TextDirection? textDirection,
   }) => DemoNav(
     delegate: delegate,
     child: MaterialApp.router(
       debugShowCheckedModeBanner: false,
       onNavigationNotification: onNavigationNotification,
+      builder: textDirection == null
+          ? null
+          : (BuildContext context, Widget? child) =>
+                Directionality(textDirection: textDirection, child: child!),
       theme: _railLabelStyle == null && platform == null
           ? null
           : ThemeData(

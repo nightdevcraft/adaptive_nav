@@ -66,8 +66,13 @@ void main() {
     expect(plainNotifications, 0);
 
     // With a hook: the first call moves the state, the second does not
-    // (value equality).
-    final DemoHarness h = DemoHarness(redirect: authState);
+    // (value equality). Nothing is built here, so the start never passes
+    // through the hook.
+    bool signedIn = true;
+    final DemoHarness h = DemoHarness(
+      redirect: (NavState<DemoRoute> next) => signedIn ? next : authState(next),
+    );
+    signedIn = false;
     int notifications = 0;
     h.delegate.addListener(() => notifications++);
 

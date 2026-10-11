@@ -94,8 +94,11 @@ Chrome and pane count are decided separately:
 | Width | Chrome | Panes |
 | --- | --- | --- |
 | `< 600` | bar | master in the body, detail overlaying the bar |
-| `600–840` | rail | one pane |
-| `> 840` | rail | two panes |
+| `≥ 600`, `fits` false | rail | one pane |
+| `≥ 600`, `fits` true | rail | two panes |
+
+With the defaults (rail 80 + 1, minimums 320 + 360, no margins, gap or
+insets) `fits` turns true from 761 across.
 
 Two states would be simpler and wrong: a wide window with a narrow content area
 has room for a rail but not for two unsqueezed panes. The chrome threshold is a
@@ -183,8 +186,8 @@ On the outer display the camera sits at the end of the vertical strip and the
 status bar runs below it, and Apple's point is that the controls line up with
 the camera. So the rail goes *into* that column: `PaneMetrics.railColumnWidth`
 is the wider of the rail's own region and the system's inset, never their sum,
-and `AdaptiveShellConfig.systemBarReserve` keeps the top of it free so the
-destinations start below the clock rather than under it.
+and `SystemBarMetrics.reserve` (`AdaptiveShellConfig.systemBar`) keeps the top
+of it free so the destinations start below the clock rather than under it.
 
 Two numbers there are measured, not derived, because nothing reports them: how
 far down the system's glyphs end, and the line they are centred on. The second
@@ -195,12 +198,13 @@ flush against the edge misses it by eight. `SystemBarMetrics` holds both, with
 the measurements in its doc comment, and is configurable for exactly the reason
 that they are a screenshot's word rather than an API's.
 
-Sharing rather than stacking also settles the pane count without a rule about
-displays. The outer display gives up 84 points to the column and keeps 382 in
-portrait and 594 in landscape, both below any minimum wide enough to split the
-inner display's 669 — so the outer display collapses to a single pane on its
-own, which is what Apple asks for. Being under 600 across, it would stay a
-stack anyway.
+Sharing rather than stacking also keeps the pane area honest. The outer display
+gives up 89 points to the column — the system's 84, widened by the rail being
+held off the edge onto the glyphs' axis — and keeps 377 in portrait and 589 in
+landscape. Minimums that split the inner display's 669 can still clear 589, so
+it is not the minimums that keep the outer display a single pane, as Apple asks:
+without its side bar it is under 600 across, and below that a window is always
+one screen (`kCompactWidthBreakpoint`).
 
 The inner display in landscape is the other case, and it does not follow the
 bar. There is room for the rail and both panes in the arrangement they have on
@@ -297,8 +301,9 @@ being dragged: the drag moves the final width while the progress stays put.
 
 ### Immersive mode is deliberately narrow
 
-`AdaptiveShellConfig.immersive` slides the rail out and gives the strip to the
-panes. It changes geometry and nothing else:
+`AdaptiveNav.immersive` (or `AdaptiveShellConfig.immersive` with a hand-built
+`Router`) slides the rail out and gives the strip to the panes. It changes
+geometry and nothing else:
 
 - **The layout class stays frozen.** The freed strip is enough to carry a branch
   across the `fits` threshold, which would move the branch navigators by
@@ -469,10 +474,16 @@ destination without delay, and only the display is held back.
 would build every tab's screens with their `initState`s, subscriptions and
 animations, for tabs the user never opened.
 
-**The left inset is not subtracted from the content area.** The rail sits
-against the edge and covers a landscape notch rather than growing by it, so the
-content gets exactly `window − rail − divider`, and the inset is removed for the
-panes' subtree.
+**A symmetric side inset is not subtracted from the content area.** A
+landscape iPhone reports the Dynamic Island on both sides at once, so the rail
+sits against the edge and covers that inset rather than growing by it: the
+content gets exactly `window − rail − divider`, the inset is removed for the
+panes' subtree, and the pane on the far side bleeds under its own copy
+(`PaneUnderlap`). A one-sided inset on the rail's edge that is not the system's
+vertical bar — Android's navigation buttons, a camera cutout in landscape — is
+different: `PaneMetrics.railCutoutInset` returns it, and the rail column grows
+by it, with the rail's background painted underneath and the destinations
+clear of it.
 
 It is removed for the rail's subtree too, which is less obvious. Material's
 `NavigationRail` carries a `SafeArea` of its own, and on a notched phone in

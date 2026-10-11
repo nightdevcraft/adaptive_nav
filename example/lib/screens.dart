@@ -4,17 +4,17 @@ import 'package:flutter/material.dart';
 import 'data.dart';
 import 'routes.dart';
 
-/// Hands the delegate and the store down to the screens. A real app would use
+/// Hands the router and the store down to the screens. A real app would use
 /// whatever state management it already has.
 class AppScope extends InheritedWidget {
   const AppScope({
-    required this.delegate,
+    required this.nav,
     required this.store,
     required super.child,
     super.key,
   });
 
-  final AdaptiveRouterDelegate<AppRoute> delegate;
+  final AdaptiveNav<AppRoute> nav;
   final PeopleStore store;
 
   static AppScope of(BuildContext context) =>
@@ -22,7 +22,7 @@ class AppScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppScope oldWidget) =>
-      oldWidget.delegate != delegate || oldWidget.store != store;
+      oldWidget.nav != nav || oldWidget.store != store;
 }
 
 /// An `AppBar` that keeps its trailing end clear of the clock where the shell
@@ -90,7 +90,7 @@ class PeopleListScreen extends StatelessWidget {
                 subtitle: Text(p.role),
                 // resetDetailTo, not push: picking another person is a lateral
                 // move, so a detail of any depth is replaced in one mutation.
-                onTap: () => scope.delegate.resetDetailTo(PersonDetail(p.id)),
+                onTap: () => scope.nav.resetDetailTo(PersonDetail(p.id)),
               ),
           ],
         ),
@@ -132,7 +132,7 @@ class PersonDetailScreen extends StatelessWidget {
               tooltip: 'Edit',
               // The guard runs on every way out of the editor: system back,
               // replace, a tab switch, or picking another person.
-              onPressed: () => scope.delegate.push(
+              onPressed: () => scope.nav.push(
                 PersonEdit(id),
                 onExit: () => confirmDiscard(context),
               ),
@@ -145,7 +145,7 @@ class PersonDetailScreen extends StatelessWidget {
               title: Text(person.name),
               leading: IconButton(
                 icon: Icon(isRoot ? Icons.close : Icons.arrow_back),
-                onPressed: scope.delegate.pop,
+                onPressed: scope.nav.pop,
               ),
               actions: actions,
             ),
@@ -215,7 +215,7 @@ class _PersonEditScreenState extends State<PersonEditScreen> {
     ).showSnackBar(const SnackBar(content: Text('Saved')));
     // popWithResult, not pop: the screen has already decided, so the exit
     // guard is not asked again.
-    scope.delegate.popWithResult(null);
+    scope.nav.popWithResult(null);
   }
 
   @override
