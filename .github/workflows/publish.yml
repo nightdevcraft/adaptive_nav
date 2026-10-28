@@ -1,0 +1,53 @@
+name: Publish
+
+# Publishes a package to pub.dev when its tag is pushed: adaptive_nav-v0.15.0
+# publishes packages/adaptive_nav at 0.15.0, adaptive_nav_ios-v0.1.0
+# packages/adaptive_nav_ios at 0.1.0. pub.dev checks the tag against the
+# pattern in each package's Admin tab and the version in its pubspec.
+#
+# No secrets: pub.dev takes GitHub's OIDC token, which setup-dart configures
+# for pub. The packages are Flutter packages, so the reusable workflow from
+# dart-lang/setup-dart, which only has the Dart SDK, cannot resolve them;
+# this is the custom workflow from dart.dev/go/automated-publishing with
+# Flutter added after setup-dart.
+on:
+  push:
+    tags:
+      - 'adaptive_nav-v[0-9]+.[0-9]+.[0-9]+*'
+      - 'adaptive_nav_ios-v[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Must match "Require GitHub Actions environment" on pub.dev, and the
+    # environment's protection rules decide who may publish.
+    environment: pub.dev
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      # Configures pub with the OIDC token; the Dart SDK in Flutter, which
+      # comes next on the PATH, reads the same configuration.
+      - uses: dart-lang/setup-dart@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      # The package is everything before the last "-v" in the tag.
+      - id: package
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          name="${tag%-v*}"
+          version="${tag##*-v}"
+          case "$name" in
+            adaptive_nav|adaptive_nav_ios) ;;
+            *) echo "No package for the tag $tag." >&2; exit 1 ;;
+          esac
+          declared="$(sed -n 's/^version: *//p' "packages/$name/pubspec.yaml")"
+          if [ "$declared" != "$version" ]; then
+            echo "The tag says $version, packages/$name/pubspec.yaml says $declared." >&2
+            exit 1
+          fi
+          echo "dir=packages/$name" >> "$GITHUB_OUTPUT"
+      - run: flutter pub get
+      - run: dart pub publish --force
+        working-directory: ${{ steps.package.outputs.dir }}

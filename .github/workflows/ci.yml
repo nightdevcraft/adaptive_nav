@@ -6,39 +6,57 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Every job resolves the whole workspace at the root, so adaptive_nav_ios and
+# the example build against the adaptive_nav in this checkout, and then works
+# in its own package.
 jobs:
-  test:
+  adaptive_nav:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/adaptive_nav
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
       - run: flutter pub get
+        working-directory: .
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter analyze
       - run: flutter test
-
-  example:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: flutter pub get
-        working-directory: example
-      - run: flutter analyze
-        working-directory: example
-
-  publish-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: flutter pub get
       - run: dart pub publish --dry-run
       - run: dart pub global activate pana
       - run: dart pub global run pana --no-warning .
+
+  example:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/adaptive_nav/example
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+        working-directory: .
+      - run: flutter analyze
+      - run: flutter test
+
+  adaptive_nav_ios:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/adaptive_nav_ios
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+        working-directory: .
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter analyze
+      - run: flutter test
+      - run: dart pub publish --dry-run

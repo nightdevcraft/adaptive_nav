@@ -30,10 +30,10 @@ jobs:
           channel: stable
       # The example has no platform folders in git; this generates web/.
       - run: flutter create --platforms=web --project-name adaptive_nav_example .
-        working-directory: example
+        working-directory: packages/adaptive_nav/example
       # Our own index.html, with a loading indicator.
-      - run: cp ../.github/pages/index.html web/index.html
-        working-directory: example
+      - run: cp ../../../.github/pages/index.html web/index.html
+        working-directory: packages/adaptive_nav/example
       # The Metrika counter, from Settings > Secrets and variables > Actions >
       # Variables. Unset, the page ships without analytics.
       - name: Fill in the Metrika counter
@@ -45,16 +45,16 @@ jobs:
           else
             echo "YANDEX_METRIKA_ID is not set: no analytics."
           fi
-        working-directory: example
+        working-directory: packages/adaptive_nav/example
       - run: >-
           flutter build web --release
           --target lib/playground.dart
           --no-web-resources-cdn
           --base-href "${{ steps.pages.outputs.base_path }}/"
-        working-directory: example
+        working-directory: packages/adaptive_nav/example
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: example/build/web
+          path: packages/adaptive_nav/example/build/web
 
   deploy:
     needs: build

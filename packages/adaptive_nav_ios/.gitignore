@@ -1,0 +1,10 @@
+.dart_tool/
+build/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+ios/adaptive_nav_ios/.build/
+ios/adaptive_nav_ios/.swiftpm/
+MEASUREMENTS.md
+measurements/
