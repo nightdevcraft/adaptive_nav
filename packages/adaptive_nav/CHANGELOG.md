@@ -1,59 +1,47 @@
 ## 0.15.1
 
-- Shorter changelog for 0.15.0.
+- Documentation updates.
 
 ## 0.15.0
 
+iPhone Duo support. The shell follows the system's own vertical bar on both
+displays, splits the panes on the hinge, and puts each screen's toolbar and
+the tabs into the bar the way iOS 27.1 does. The new
+[adaptive_nav_ios](https://pub.dev/packages/adaptive_nav_ios) package reads
+the bar, the fold and the cameras from UIKit; without it the shell falls back
+to `MediaQuery`. See "iPhone Duo" in the README.
+
 ### Breaking
 
-- `ChromeLayout` takes a third argument, `SystemGeometry?`: add it to a custom
-  layout. `defaultChromeLayout` takes it as optional.
-- `defaultChromeLayout` follows a one-sided `kVerticalBarInset` at any width:
-  on iPhone Duo's inner display in landscape the rail moves into the column.
-- In iPhone Duo's system column the rail is the screen's toolbar at the top and
-  icon-only tabs at the bottom, More for the rest. A `railBuilder` is unchanged.
-- An open detail over a single pane covers the rail, as it covers the bar. To
-  keep it on iOS and macOS: `detailChrome: DetailChrome.kept`.
-- Tapping the active destination pops to the branch root, through `onExit`.
-  To keep the old no-op: `reselect: BranchReselect.none`.
-- Removed `actionsInStatusColumn`, `StatusColumnScope`, `StatusColumnActions`
-  and `SystemBarMetrics.statusColumnTop`: use `PaneToolbar`.
-- `Navigator.maybePop` from a screen of an inactive branch does nothing;
-  `Navigator.pop` still pops it (see Fixes).
-- On iPhone Duo a screen without a `PaneToolbar` gets Back in the column, not
-  the `AppBar`'s arrow. To opt out: `automaticBackInColumn: false`.
-- With a fold, panes meet on the hinge and get half the crease as
-  `MediaQuery.padding`; `PaneDecoration.gap` is split around it.
-- `SystemBarEndResolver` takes the display's size as a third argument: add it
-  to a custom resolver.
-- `SystemBarMetrics.measured`: `reserve` 170, `landscapeReserve` 82,
-  `statusRowTrailing` 134, new `innerReserve` 120 (`kCompactDisplayShortSide`).
+- A custom `ChromeLayout` or `SystemBarEndResolver` takes one more argument:
+  `SystemGeometry?` and the display size respectively.
+- On iPhone Duo the rail follows the system bar on the inner display in
+  landscape too, and the column holds the screen's toolbar above icon-only
+  tabs. A `railBuilder` rail is unchanged.
+- An open detail over a single pane now covers the rail, as it covers the
+  bottom bar. On iOS and macOS `detailChrome: DetailChrome.kept` keeps it.
+- Tapping the active tab again returns to the branch root.
+  `reselect: BranchReselect.none` keeps the old behaviour.
+- On iPhone Duo, Back of a screen without a `PaneToolbar` moves from the
+  `AppBar` into the column; `automaticBackInColumn: false` keeps it in the
+  `AppBar`.
+- The experimental `actionsInStatusColumn`, `StatusColumnActions`,
+  `StatusColumnScope` and `SystemBarMetrics.statusColumnTop` are gone: use
+  `PaneToolbar`.
+- `Navigator.maybePop` from a screen in an inactive tab does nothing.
 
 ### Features
 
-- `SystemGeometry` and `SystemGeometryScope`: the platform's bar side, status
-  area and folds, read by the shell. adaptive_nav_ios provides them.
-- `SystemBarMetrics.reserveFor`, `followsSystemGeometry` and `columnInset`;
-  `SystemBarMetrics.none` ignores a reported status area too.
-- `PaneToolbar`, `PaneToolbarItem` and `PaneToolbarLayout`: a screen's toolbar,
-  as a header or in iPhone Duo's column. README: "iPhone Duo".
-- `PaneBar`, `PaneBarScope`, `maxHeaderActions`, `kPaneToolbarItemExtent`,
-  `kPaneToolbarItemGap`, `kPaneToolbarGroupGap`. Pinned items get the primary.
-- `VerticalBarCompression`, `BranchConfig.verticalCompression` and
-  `PaneToolbar.compression`: whether the toolbar or the tabs give way first.
-- `AdaptiveShellConfig.railLabelsInColumn` (`kRailDestinationIconExtent`),
-  `railAlignment` (`RailAlignment`) and `BranchConfig.visibilityPriority`.
-- The column follows route transitions and back gestures; the iOS swipe back
-  starts at the window's edge, across the column.
-- `AdaptiveShellConfig.detailChrome` and `DetailChrome`. README: "A detail and
-  the chrome".
-- `AdaptiveShellConfig.reselect`, `BranchReselect` and `onReselect`
-  (`BranchReselectCallback`). README: "Tapping the active tab again".
-- `AdaptiveShellConfig.automaticBackInColumn`; built pages and routes add
-  `impliesAppBarDismissal`.
-- `FoldMetrics.fromRects`. Folds come from `MediaQuery.displayFeatures`, then
-  `SystemGeometry.folds`, then `foldLocator`.
-- A rail with nothing above it keeps `cornerClearance` free at its top.
+- `PaneToolbar`: a screen's actions, as an `AppBar` row or in iPhone Duo's
+  column, with an overflow menu, visibility priorities and compression.
+- `SystemGeometry` / `SystemGeometryScope`: the platform's bar side, status
+  area and folds, as provided by adaptive_nav_ios.
+- Panes meet on the hinge of a half-open device; the crease becomes padding.
+- The column follows page transitions and back gestures, and the iOS back
+  swipe works from the window's edge.
+- `onReselect` for scrolling a list to the top when its tab is tapped again.
+- `railLabelsInColumn` chooses icon-only or labelled tabs in the column, and
+  `railAlignment` where a rail's tabs sit.
 
 ### Fixes
 
