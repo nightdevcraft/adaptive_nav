@@ -1,0 +1,36 @@
+name: adaptive_nav_ios
+description: >-
+  iPhone Duo geometry for adaptive_nav: the side of the system's vertical bar,
+  its status area and the fold, read from UIKit and handed to the shell.
+  Builds with Xcode 27.1 or later.
+version: 0.1.0
+
+repository: https://github.com/nightdevcraft/adaptive_nav/tree/main/packages/adaptive_nav_ios
+issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues
+
+topics:
+  - foldable
+  - adaptive
+  - ios
+
+environment:
+  sdk: ^3.10.8
+  flutter: ">=3.38.9"
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  adaptive_nav: ^0.15.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: AdaptiveNavIosPlugin

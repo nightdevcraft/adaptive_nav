@@ -1,0 +1,13 @@
+analyzer:
+  exclude:
+    - build/**
+    - ios/**
+    - android/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+    # Scripts of the simulator runs, built against integration_test in a
+    # package of their own.
+    - measurements/**
+include: package:flutter_lints/flutter.yaml
