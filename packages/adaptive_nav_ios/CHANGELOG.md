@@ -1,3 +1,8 @@
+## 0.1.1
+
+- An example.
+- Documentation for the whole public API.
+
 ## 0.1.0
 
 - First release: iPhone Duo's vertical bar, fold, cameras and safe areas from

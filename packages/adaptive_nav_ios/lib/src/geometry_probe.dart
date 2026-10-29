@@ -23,8 +23,10 @@ import 'geometry_provider.dart';
 /// Wants a [DuoGeometryProvider] above it. Works inside or outside a
 /// `WidgetsApp`.
 class DuoGeometryProbe extends StatelessWidget {
+  /// Draws the geometry over [child], and logs it unless [log] is `false`.
   const DuoGeometryProbe({super.key, required this.child, this.log = true});
 
+  /// The app.
   final Widget child;
 
   /// Print a `duo_probe` line on every change.

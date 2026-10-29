@@ -3,7 +3,7 @@ description: >-
   iPhone Duo geometry for adaptive_nav: the side of the system's vertical bar,
   its status area and the fold, read from UIKit and handed to the shell.
   Builds with Xcode 27.1 or later.
-version: 0.1.0
+version: 0.1.1
 
 repository: https://github.com/nightdevcraft/adaptive_nav/tree/main/packages/adaptive_nav_ios
 issue_tracker: https://github.com/nightdevcraft/adaptive_nav/issues
