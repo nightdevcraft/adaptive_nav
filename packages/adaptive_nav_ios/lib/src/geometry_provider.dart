@@ -38,8 +38,10 @@ Stream<DuoGeometry?> _platformGeometry() {
 /// otherwise — it provides `null` and listens to nothing, and the shell falls
 /// back to `MediaQuery`.
 class DuoGeometryProvider extends StatefulWidget {
+  /// Provides UIKit's geometry to [child], or that of [source] when given.
   const DuoGeometryProvider({super.key, required this.child, this.source});
 
+  /// The app.
   final Widget child;
 
   /// Replaces the plugin, for tests and for previewing a posture.
@@ -110,12 +112,15 @@ class _DuoGeometryProviderState extends State<DuoGeometryProvider> {
 /// Carries a [DuoGeometry] down the tree. [DuoGeometryProvider] puts one in;
 /// a test can put one in directly.
 class DuoGeometryScope extends InheritedWidget {
+  /// Provides [geometry] to [child].
   const DuoGeometryScope({
     super.key,
     required this.geometry,
     required super.child,
   });
 
+  /// The geometry, or `null` where there is none: no window yet, or not
+  /// on iOS.
   final DuoGeometry? geometry;
 
   /// The nearest geometry, or `null` with no provider above or nothing

@@ -12,7 +12,11 @@ import 'package:flutter/painting.dart' show EdgeInsets;
 enum VerticalBarEdge {
   /// Bars are horizontal: no vertical bar in this window.
   none,
+
+  /// Along the leading edge: the left one left to right.
   leading,
+
+  /// Along the trailing edge: the right one left to right.
   trailing,
 
   /// A raw value this version does not know. [DuoGeometry.verticalBarEdgeRaw]
@@ -21,10 +25,29 @@ enum VerticalBarEdge {
 }
 
 /// A physical side of the window.
-enum VerticalBarSide { left, right }
+enum VerticalBarSide {
+  /// The left edge.
+  left,
+
+  /// The right edge.
+  right,
+}
 
 /// `UIHingeInteraction`'s status.
-enum HingeStatus { closed, partiallyOpen, fullyOpen, unknown }
+enum HingeStatus {
+  /// Folded shut.
+  closed,
+
+  /// Half open: the fold is active.
+  partiallyOpen,
+
+  /// Flat.
+  fullyOpen,
+
+  /// A raw value this version does not know. [DuoGeometry.hingeStatusRaw]
+  /// has it.
+  unknown,
+}
 
 /// `UIView.ReservedRegion.Kind`.
 enum ReservedRegionKind {
@@ -39,6 +62,7 @@ enum ReservedRegionKind {
 /// Flutter view — the coordinates `MediaQuery` and a global `Offset` use.
 @immutable
 class ReservedRegion {
+  /// A region as UIKit reports it; [DuoGeometry.fromMap] builds these.
   const ReservedRegion({
     required this.kind,
     required this.frame,
@@ -46,7 +70,10 @@ class ReservedRegion {
     required this.isActive,
   });
 
+  /// A fold or an occlusion.
   final ReservedRegionKind kind;
+
+  /// Where the region is, in Flutter logical pixels relative to the view.
   final Rect frame;
 
   /// Space UIKit asks to keep clear around [frame].
@@ -76,6 +103,9 @@ class ReservedRegion {
 /// What UIKit says about the Flutter view's window.
 @immutable
 class DuoGeometry {
+  /// Geometry with the given values. The plugin's comes from [fromMap]; this
+  /// is for tests and for previewing a posture through
+  /// `DuoGeometryProvider.source`.
   const DuoGeometry({
     required this.isSupported,
     required this.size,
@@ -148,6 +178,8 @@ class DuoGeometry {
   /// The window's layout direction, which [verticalBarEdge] is relative to.
   final TextDirection layoutDirection;
 
+  /// `UITraitCollection.verticalBarEdge`: [VerticalBarEdge.none] where the
+  /// bars are horizontal. [verticalBarSide] has it as a physical side.
   final VerticalBarEdge verticalBarEdge;
 
   /// The trait's raw value, kept so a mapping this version gets wrong shows.
@@ -159,17 +191,27 @@ class DuoGeometry {
   /// `null` until the hinge interaction has reported, and where there is no
   /// hinge.
   final HingeStatus? hingeStatus;
+
+  /// The status's raw value, kept so a mapping this version gets wrong
+  /// shows.
   final int? hingeStatusRaw;
 
   /// The hinge angle as UIKit reports it.
   final double? hingeAngle;
 
-  /// The screen the window is on, and where the view sits on it. Under Split
-  /// View the window is part of the screen, and this says which part.
+  /// The size of the screen the window is on.
   final Size? screenSize;
+
+  /// Where the view sits on the screen. Under Split View the window is part
+  /// of the screen, and this says which part.
   final Rect? frameInScreen;
 
+  /// `UITraitCollection.horizontalSizeClass`: `compact`, `regular` or
+  /// `unspecified`.
   final String? horizontalSizeClass;
+
+  /// `UITraitCollection.verticalSizeClass`: `compact`, `regular` or
+  /// `unspecified`.
   final String? verticalSizeClass;
 
   /// The map as the plugin sent it, for logging.
