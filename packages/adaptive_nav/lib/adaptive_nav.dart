@@ -33,5 +33,6 @@ export 'src/pane_toolbar.dart'
         kPaneToolbarGroupGap,
         kPaneToolbarItemGap,
         kPaneToolbarItemExtent;
+export 'src/shell_layout_scope.dart';
 export 'src/status_row.dart';
 export 'src/system_geometry.dart';

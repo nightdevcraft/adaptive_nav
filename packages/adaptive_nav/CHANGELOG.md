@@ -1,3 +1,15 @@
+## 0.16.0
+
+- `ShellLayoutScope` above every branch navigator: the chrome's placement, the
+  pane the navigator fills and whether its branch's detail has a pane of its
+  own, from the same decision the shell lays the panes out by.
+- Screen readers see the tabs, the rail and the master pane; since 0.9.0 the
+  detail navigator hid them, and with no detail open nothing was read. The
+  master and detail stacks are now semantics containers of their own, which
+  semantics tests of an app may notice.
+- iPhone Duo: with a `railBuilder` that returns `null`, the system's column
+  shows the detail's toolbar instead of losing it.
+
 ## 0.15.1
 
 - Documentation updates.

@@ -1,3 +1,7 @@
+## 0.1.2
+
+- Allows adaptive_nav 0.16.0.
+
 ## 0.1.1
 
 - An example.

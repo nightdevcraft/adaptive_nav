@@ -35,7 +35,7 @@ rotate, and on iPhone Duo and Galaxy Z Fold8 you can fold.
 
 ```yaml
 dependencies:
-  adaptive_nav: ^0.15.0
+  adaptive_nav: ^0.16.0
 ```
 
 ## Quick start
@@ -557,6 +557,8 @@ Inherited scopes let your screens adapt without recomputing the layout:
   `DetailPaneScope.isFullScreen(context)` — it is a detail shown across the
   whole area. Covering the navigation bar (`DetailChrome.covered`), its bottom
   edge becomes its own responsibility.
+- `ShellLayoutScope.of(context)` — the layout around the screen's navigator:
+  see [Which pane a screen is in](#which-pane-a-screen-is-in).
 - `PaneBarScope.of(context).verticalEdge` — the pane's toolbar stands in the
   system's column on iPhone Duo; `PaneToolbar` reads it for you, see
   [The toolbar beside the system's bar](#the-toolbar-beside-the-systems-bar).
@@ -567,6 +569,28 @@ Inherited scopes let your screens adapt without recomputing the layout:
 contents of a pane and gets the platform slide when it takes the whole screen —
 and it decides that while the animation runs, so the dismissal matches the
 layout the user is actually looking at.
+
+### Which pane a screen is in
+
+The shell puts a `ShellLayoutScope` above every branch navigator, inactive
+branches included: `placement` is where the chrome is, `pane` is
+`ShellPane.single`, `master` or `detail`, and `detailInOwnPane` says the
+branch's detail stands in a pane of its own beside the master. It is the
+decision the shell lays the panes out by, so a screen never has to repeat the
+arithmetic. A resize, a rotation or a tab switch rebuilds only what reads it.
+
+```dart
+void openFilters(BuildContext context) {
+  if (ShellLayoutScope.of(context).detailInOwnPane) {
+    nav.push(const FiltersRoute()); // lands in the detail pane
+  } else {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext context) => const FiltersSheet(),
+    );
+  }
+}
+```
 
 ## Notes
 

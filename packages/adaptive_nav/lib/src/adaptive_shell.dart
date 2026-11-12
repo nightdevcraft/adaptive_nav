@@ -14,10 +14,19 @@ import 'nav_state.dart';
 import 'pane_metrics.dart';
 import 'pane_split.dart';
 import 'pane_toolbar.dart';
+import 'shell_layout_scope.dart';
 import 'status_row.dart';
 import 'system_geometry.dart';
 
 typedef _Stacks = ({Widget masters, Widget details, Widget placeholder});
+
+/// Where the chrome is, the width the panes are laid out into, and for each
+/// branch whether its master and detail stand side by side.
+typedef _Layout = ({
+  ChromePlacement placement,
+  double paneArea,
+  List<bool> twoPanes,
+});
 
 /// The system's column on [edge], when there is one beside the panes:
 /// whether the rail is in it, the pane whose toolbar stands in it, `null`
@@ -228,35 +237,92 @@ class AdaptiveShell<R> extends StatelessWidget {
     ];
   }
 
+  /// One pane or two for every branch, from the window: the decision every
+  /// layout, the system's column and each [ShellLayoutScope] take.
+  ///
+  /// [paneArea] is what [MasterDetailConfig.fits] is asked about and what
+  /// the panes are laid out into; [hasRail] is whether a rail is built, which
+  /// a hidden chrome or an app's `railBuilder` returning `null` rules out.
+  /// The rail's width counts while an immersive rail slides out: the layout
+  /// class is frozen, see `_railRow`.
+  _Layout _layoutFor(
+    Size window,
+    EdgeInsets padding,
+    ChromePlacement placement, {
+    required bool hasRail,
+  }) {
+    final PaneDecoration panes = shellConfig.panes;
+    final double paneArea = PaneMetrics.paneAreaWidth(
+      window: window.width,
+      padding: padding,
+      placement: placement,
+      railWidth: shellConfig.railWidth,
+      panes: panes,
+      rail: shellConfig.rail,
+      systemBarMetrics: shellConfig.systemBar,
+      hasChrome: hasRail,
+    );
+    // A side bar or a custom layout can put a rail below the breakpoint.
+    final bool allows = PaneMetrics.allowsTwoPanes(
+      window: window.width,
+      padding: padding,
+    );
+    return (
+      placement: placement,
+      paneArea: paneArea,
+      twoPanes: <bool>[
+        for (final BranchConfig<R> branch in shellConfig.branches)
+          allows &&
+              (branch.masterDetail?.fits(paneArea, gap: panes.gap) ?? false),
+      ],
+    );
+  }
+
   /// [slot] is the pane the navigator fills; its screens register their
   /// toolbars under it, and learn from [column] whether theirs is vertical.
+  /// [layout] says where the chrome is and whether the slot's branch has two
+  /// panes; the scope is there in every layout, so its values change and the
+  /// navigator's ancestors do not.
   Widget _nav(
     GlobalKey<NavigatorState> key,
     List<Page<Object?>> pages,
     PaneSlot slot,
     _SystemColumn? column,
+    _Layout layout,
   ) {
+    final bool twoPanes = layout.twoPanes[slot.branch];
     // Outside the `Navigator`, which corrects its own report first. Several
     // navigators cannot share the `HeroController` from `MaterialApp`.
-    return PaneToolbarHost(
-      registry: paneToolbars,
-      slot: slot,
-      automaticBack: shellConfig.automaticBackInColumn,
-      child: PaneBarScope(
-        bar: PaneBar(verticalEdge: column?.slot == slot ? column!.edge : null),
-        child: NotificationListener<NavigationNotification>(
-          onNotification: (NavigationNotification n) =>
-              onNavigationNotification(key, n),
-          child: BranchActiveScope(
-            active: slot.branch == state.activeBranch,
-            child: HeroControllerScope.none(
-              child: Navigator(
-                key: key,
-                pages: pages,
-                onDidRemovePage: onDidRemovePage,
-                observers: <NavigatorObserver>[
-                  columnTransitions.observerFor(key),
-                ],
+    return ShellLayoutScope(
+      placement: layout.placement,
+      pane: !twoPanes
+          ? ShellPane.single
+          : slot.detail
+          ? ShellPane.detail
+          : ShellPane.master,
+      detailInOwnPane: twoPanes,
+      child: PaneToolbarHost(
+        registry: paneToolbars,
+        slot: slot,
+        automaticBack: shellConfig.automaticBackInColumn,
+        child: PaneBarScope(
+          bar: PaneBar(
+            verticalEdge: column?.slot == slot ? column!.edge : null,
+          ),
+          child: NotificationListener<NavigationNotification>(
+            onNotification: (NavigationNotification n) =>
+                onNavigationNotification(key, n),
+            child: BranchActiveScope(
+              active: slot.branch == state.activeBranch,
+              child: HeroControllerScope.none(
+                child: Navigator(
+                  key: key,
+                  pages: pages,
+                  onDidRemovePage: onDidRemovePage,
+                  observers: <NavigatorObserver>[
+                    columnTransitions.observerFor(key),
+                  ],
+                ),
               ),
             ),
           ),
@@ -265,28 +331,45 @@ class AdaptiveShell<R> extends StatelessWidget {
     );
   }
 
-  Widget _mastersStackAt(int index, _SystemColumn? column) => IndexedStack(
-    key: mastersStackKey,
-    index: index,
-    sizing: StackFit.expand,
-    children: <Widget>[
-      for (int i = 0; i < shellConfig.branches.length; i++)
-        if (mountedBranches.contains(i))
-          _nav(branchKeys[i].master, _mainPages(i), (
-            branch: i,
-            detail: false,
-          ), column)
-        else
-          const SizedBox.shrink(),
-    ],
-  );
+  /// Each stack is a semantics container. A route's barrier blocks the
+  /// semantics painted before it up to the nearest one, and without these
+  /// that was the shell: the detail navigator, over the master and the
+  /// chrome and never without its transparent base page, hid both from
+  /// screen readers. What the detail covers is `_detailsIn`'s to say.
+  ///
+  /// Around the stack and not each `Navigator`: a container that moved with
+  /// a navigator kept a stale parent in the framework's semantics tree when
+  /// its branch was reparented while inactive, and failed an assertion when
+  /// the branch came back.
+  Widget _mastersStackAt(int index, _SystemColumn? column, _Layout layout) =>
+      Semantics(
+        container: true,
+        child: IndexedStack(
+          key: mastersStackKey,
+          index: index,
+          sizing: StackFit.expand,
+          children: <Widget>[
+            for (int i = 0; i < shellConfig.branches.length; i++)
+              if (mountedBranches.contains(i))
+                _nav(
+                  branchKeys[i].master,
+                  _mainPages(i),
+                  (branch: i, detail: false),
+                  column,
+                  layout,
+                )
+              else
+                const SizedBox.shrink(),
+          ],
+        ),
+      );
 
-  Widget _mastersStack(_SystemColumn? column) {
+  Widget _mastersStack(_SystemColumn? column, _Layout layout) {
     final Duration fade = shellConfig.branchFadeDuration;
     if (fade == Duration.zero) {
       return _paneMessenger(
         masterMessengerKey,
-        _mastersStackAt(state.activeBranch, column),
+        _mastersStackAt(state.activeBranch, column, layout),
       );
     }
     return _paneMessenger(
@@ -295,7 +378,7 @@ class AdaptiveShell<R> extends StatelessWidget {
         key: branchFadeKey,
         index: state.activeBranch,
         duration: fade,
-        builder: (int index) => _mastersStackAt(index, column),
+        builder: (int index) => _mastersStackAt(index, column, layout),
       ),
     );
   }
@@ -310,30 +393,50 @@ class AdaptiveShell<R> extends StatelessWidget {
   Widget _paneMessenger(GlobalKey<ScaffoldMessengerState> key, Widget child) =>
       ScaffoldMessenger(key: key, child: child);
 
-  Widget _detailsStack(_SystemColumn? column) => _paneMessenger(
+  Widget _detailsStack(_SystemColumn? column, _Layout layout) => _paneMessenger(
     detailMessengerKey,
-    IndexedStack(
-      key: detailsStackKey,
-      index: state.activeBranch,
-      sizing: StackFit.expand,
-      children: <Widget>[
-        for (int i = 0; i < shellConfig.branches.length; i++)
-          if (mountedBranches.contains(i))
-            _nav(branchKeys[i].detail, _detailPages(i), (
-              branch: i,
-              detail: true,
-            ), column)
-          else
-            const SizedBox.shrink(),
-      ],
+    Semantics(
+      container: true,
+      child: IndexedStack(
+        key: detailsStackKey,
+        index: state.activeBranch,
+        sizing: StackFit.expand,
+        children: <Widget>[
+          for (int i = 0; i < shellConfig.branches.length; i++)
+            if (mountedBranches.contains(i))
+              _nav(
+                branchKeys[i].detail,
+                _detailPages(i),
+                (branch: i, detail: true),
+                column,
+                layout,
+              )
+            else
+              const SizedBox.shrink(),
+        ],
+      ),
     ),
   );
 
   /// [inPane] is the signal [AppTransition.adaptive] pages read. It lives in a
   /// scope rather than in the entry, because the layout changes on resize while
   /// the page has to stay the same one.
-  Widget _detailsIn(_Stacks stacks, {required bool inPane}) =>
-      DetailPaneScope(inPane: inPane, child: stacks.details);
+  ///
+  /// For screen readers the layer is what it is on screen. Open and over the
+  /// master, it hides what is painted under it, up to the nearest semantics
+  /// container: the master and the chrome it covers, or only the master
+  /// where it stays in the body or a pane. Empty, it is nothing, and its
+  /// transparent base page is left out.
+  Widget _detailsIn(_Stacks stacks, {required bool inPane}) {
+    final bool empty = _activeDetailEmpty;
+    return BlockSemantics(
+      blocking: !inPane && !empty,
+      child: ExcludeSemantics(
+        excluding: empty,
+        child: DetailPaneScope(inPane: inPane, child: stacks.details),
+      ),
+    );
+  }
 
   Widget _detailPlaceholder() {
     final WidgetBuilder? b =
@@ -358,6 +461,29 @@ class AdaptiveShell<R> extends StatelessWidget {
     // pane coordinates once the pane area's origin is known.
     final Rect? foldHint = shellConfig.foldLocator?.call(window, padding);
     final bool covers = _detailCovers(context);
+    // The app's rail, built once: whether there is one decides the width the
+    // panes get, and that is needed before the screens are built.
+    final Widget? customRail = chrome && placement.isRail
+        ? shellConfig.railBuilder?.call(
+            context,
+            state.activeBranch,
+            onSelectBranch,
+          )
+        : null;
+    final bool hasRail =
+        chrome &&
+        placement.isRail &&
+        (shellConfig.railBuilder == null || customRail != null);
+    // One pane or two, decided once, here, for every branch: the layouts
+    // below, the system's column and the screens' [ShellLayoutScope] all
+    // take it from this.
+    final _Layout paneLayout = _layoutFor(
+      window,
+      padding,
+      placement,
+      hasRail: hasRail,
+    );
+    final bool twoPanes = paneLayout.twoPanes[state.activeBranch];
     // Decided before the screens are built: it is part of what they are told.
     final _SystemColumn? column = _systemColumn(
       window,
@@ -365,6 +491,8 @@ class AdaptiveShell<R> extends StatelessWidget {
       placement,
       system,
       covers: covers,
+      twoPanes: twoPanes,
+      hasRail: hasRail,
     );
     final MasterDetailConfig? md =
         shellConfig.branches[state.activeBranch].masterDetail;
@@ -379,14 +507,16 @@ class AdaptiveShell<R> extends StatelessWidget {
               placement,
               system,
               covers: covers,
+              twoPanes: twoPanes,
+              hasRail: hasRail,
               detailOpen: md != null && depth > 2,
             ),
     );
     // Built once and only placed below, so the per-frame rebuilds of a drag,
     // the detail reveal and the immersive slide leave the screens alone.
     final _Stacks stacks = (
-      masters: _mastersStack(column),
-      details: _detailsStack(column),
+      masters: _mastersStack(column, paneLayout),
+      details: _detailsStack(column, paneLayout),
       placeholder: _detailPlaceholder(),
     );
     final Widget layout = placement.isRail
@@ -401,6 +531,9 @@ class AdaptiveShell<R> extends StatelessWidget {
             covers: covers,
             railInColumn: column != null && placement == column.edge,
             columns: columns,
+            customRail: customRail,
+            paneArea: paneLayout.paneArea,
+            twoPanes: twoPanes,
           )
         : _buildBar(
             context,
@@ -415,6 +548,8 @@ class AdaptiveShell<R> extends StatelessWidget {
             ),
             foldHint: foldHint,
             covers: covers,
+            paneArea: paneLayout.paneArea,
+            twoPanes: twoPanes,
           );
     // A column without the rail in it, the panes underneath: the shell draws
     // the toolbar over them. Always a `Stack`, so the layout under it is not
@@ -540,8 +675,9 @@ class AdaptiveShell<R> extends StatelessWidget {
   /// the column: what is left is the inset, and the toolbar has it alone. The
   /// tabs stay where they were, under the detail.
   ///
-  /// Two panes or one is the same arithmetic the layouts below do, from the
-  /// same declared numbers.
+  /// Two panes or one, [twoPanes], is the layout's own decision
+  /// ([_layoutFor]), and so is [hasRail]: an app's `railBuilder` that
+  /// returned `null` leaves the column without tabs, and the toolbar has it.
   ///
   /// [detailOpen] is the state's unless given: the column a back gesture
   /// leads to is worked out before the detail it closes has gone.
@@ -551,6 +687,8 @@ class AdaptiveShell<R> extends StatelessWidget {
     ChromePlacement placement,
     SystemGeometry? system, {
     required bool covers,
+    required bool twoPanes,
+    required bool hasRail,
     bool? detailOpen,
   }) {
     final ChromePlacement? edge = system?.verticalBar ?? _insetSide(padding);
@@ -559,26 +697,9 @@ class AdaptiveShell<R> extends StatelessWidget {
     }
     final MasterDetailConfig? md =
         shellConfig.branches[state.activeBranch].masterDetail;
-    final PaneDecoration panes = shellConfig.panes;
-    final bool twoPanes =
-        md != null &&
-        PaneMetrics.allowsTwoPanes(window: window.width, padding: padding) &&
-        md.fits(
-          PaneMetrics.paneAreaWidth(
-            window: window.width,
-            padding: padding,
-            placement: placement,
-            railWidth: shellConfig.railWidth,
-            panes: panes,
-            rail: shellConfig.rail,
-            systemBarMetrics: shellConfig.systemBar,
-            hasChrome: chrome,
-          ),
-          gap: panes.gap,
-        );
     detailOpen ??= !_activeDetailEmpty;
     final bool inRail =
-        chrome && placement == edge && !(covers && !twoPanes && detailOpen);
+        hasRail && placement == edge && !(covers && !twoPanes && detailOpen);
     final double inset = edge == ChromePlacement.left
         ? padding.left
         : padding.right;
@@ -913,20 +1034,14 @@ class AdaptiveShell<R> extends StatelessWidget {
     ({double top, double start})? statusRow,
     Rect? foldHint,
     bool covers = true,
+    required double paneArea,
+    required bool twoPanes,
   }) {
-    final MasterDetailConfig? md =
-        PaneMetrics.allowsTwoPanes(window: window, padding: padding)
+    final MasterDetailConfig? md = twoPanes
         ? shellConfig.branches[state.activeBranch].masterDetail
         : null;
     final PaneDecoration panes = shellConfig.panes;
-    final double paneArea = PaneMetrics.paneAreaWidth(
-      window: window,
-      padding: padding,
-      placement: ChromePlacement.bottom,
-      railWidth: shellConfig.railWidth,
-      panes: panes,
-    );
-    if (md != null && md.fits(paneArea, gap: panes.gap)) {
+    if (md != null) {
       final PaneUnderlap underlap = PaneMetrics.underlap(
         padding: padding,
         panes: panes,
@@ -1089,6 +1204,9 @@ class AdaptiveShell<R> extends StatelessWidget {
     bool covers = true,
     bool railInColumn = false,
     _Columns columns = (now: null, afterBack: null),
+    Widget? customRail,
+    required double paneArea,
+    required bool twoPanes,
   }) {
     final PaneDecoration panes = shellConfig.panes;
     final RailDecoration rail = shellConfig.rail;
@@ -1129,6 +1247,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     // package draws it and a custom builder must not.
     final Widget? railWidget = _railWidget(
       context,
+      appRail: customRail,
       // The count's column already leaves the top inset out; whatever the
       // corner adds to it is reserved as well.
       reserve: reserveIfShown + railTop - insetTop,
@@ -1146,15 +1265,10 @@ class AdaptiveShell<R> extends StatelessWidget {
         boxTop: shellConfig.rail.margin.top + railTop,
       ),
     );
-    final double paneArea = PaneMetrics.paneAreaWidth(
-      window: window,
-      padding: padding,
-      placement: placement,
-      railWidth: shellConfig.railWidth,
-      panes: panes,
-      rail: rail,
-      systemBarMetrics: shellConfig.systemBar,
-      hasChrome: railWidget != null,
+    // [paneArea] was worked out in `build` for exactly this rail.
+    assert(
+      (railWidget != null) ==
+          (chrome && (shellConfig.railBuilder == null || customRail != null)),
     );
     // Tied to the presence of the rail, not to the immersive progress: the
     // layout class is frozen while the rail slides out, and so is what the
@@ -1193,14 +1307,11 @@ class AdaptiveShell<R> extends StatelessWidget {
             cutout: cutout,
             rail: rail,
           );
-    // A side bar or a custom layout can put a rail below the breakpoint.
-    final MasterDetailConfig? md =
-        PaneMetrics.allowsTwoPanes(window: window, padding: padding)
+    // Only with two panes: `_railRow` lays them out from it.
+    final MasterDetailConfig? md = twoPanes
         ? shellConfig.branches[state.activeBranch].masterDetail
         : null;
-    // The same threshold `_railRow` lays the panes out by.
-    final bool overRail =
-        covers && !(md != null && md.fits(paneArea, gap: panes.gap));
+    final bool overRail = covers && !twoPanes;
     return Stack(
       children: <Widget>[
         _railScaffold(
@@ -1566,8 +1677,9 @@ class AdaptiveShell<R> extends StatelessWidget {
         removeRight: railWidget != null && !onLeft,
         child: _inPaneArea(
           panes: panes,
-          // Threshold from the frozen width, widths from the live one.
-          child: md != null && md.fits(paneArea, gap: panes.gap)
+          // Threshold from the frozen width ([md] is there only with two
+          // panes), widths from the live one.
+          child: md != null
               ? _twoPanes(
                   context,
                   stacks,
@@ -1849,17 +1961,22 @@ class AdaptiveShell<R> extends StatelessWidget {
       right: underlap.right,
       child: _paneCard(
         context,
-        Stack(
-          children: <Widget>[
-            stacks.masters,
-            if (withDetail)
-              IgnorePointer(
-                ignoring: _activeDetailEmpty,
-                // Same presentation as compact, so the same platform
-                // transition.
-                child: _detailsIn(stacks, inPane: false),
-              ),
-          ],
+        // The detail over the master blocks no further than this pane:
+        // the rail beside it stays.
+        Semantics(
+          container: true,
+          child: Stack(
+            children: <Widget>[
+              stacks.masters,
+              if (withDetail)
+                IgnorePointer(
+                  ignoring: _activeDetailEmpty,
+                  // Same presentation as compact, so the same platform
+                  // transition.
+                  child: _detailsIn(stacks, inPane: false),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2265,6 +2382,7 @@ class AdaptiveShell<R> extends StatelessWidget {
     bool column = false,
     _Columns columns = (now: null, afterBack: null),
     ({double top, double bottom}) ends = (top: 0, bottom: 0),
+    Widget? appRail,
   }) {
     // Unlike the bar, the rail handles a hidden branch natively.
     if (!chrome) {
@@ -2280,14 +2398,10 @@ class AdaptiveShell<R> extends StatelessWidget {
           labels: labels,
         );
       }
-      return custom(context, state.activeBranch, onSelectBranch);
+      return appRail;
     }
     // The app's rail is the app's to fit: the toolbar goes above it whole.
-    final Widget? customRail = custom?.call(
-      context,
-      state.activeBranch,
-      onSelectBranch,
-    );
+    final Widget? customRail = appRail;
     if (custom != null && customRail == null) {
       return null;
     }
